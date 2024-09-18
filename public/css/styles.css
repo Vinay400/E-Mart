@@ -1,0 +1,152 @@
+img{
+  height: 60px;
+  background-color:  rgba(var(--bs-light-rgb), var(--bs-bg-opacity));
+  opacity: 1;
+}
+body{
+  width: 100%;
+}
+.class-solution{
+  margin-left: 10%;
+}
+
+.btn.btn-bg{
+  background: #7db434;
+  border-color: #7db434;
+  color: #fff;
+  z-index: 1;
+
+}
+
+.navbar li a{
+  color: black;
+  }
+
+.navbar li{
+  margin-right: 20px;
+
+}
+
+.collapse-navbar-collapse{
+  background-color: #E9EFEC;
+}
+
+.dropdown-toggle::after {
+  display: inline-block;
+  margin-left: .255em;
+  vertical-align: .255em;
+  content: "";
+  border-top: .3em solid;
+  border-right: .3em solid transparent;
+  border-bottom: 0;
+  border-left: .3em solid transparent;
+}
+.hero-section {
+  background-image: url("images/Image.png");
+  background-size: cover;
+  height: 500px;
+  justify-content: left;
+  align-items: self-start;
+  z-index: -2;
+}
+
+h1 {
+  margin-bottom: 10px;
+}
+
+p {
+  margin-top: 0;
+}
+
+
+.hero-msg{
+  position: relative;
+  left: 10%;
+  color:#f9f8ef;
+  font-weight: 400;
+  height: 50px;
+  margin: 0;
+  padding: 0;
+  line-height: 1.2;
+}
+.ms-mb-s {
+  margin-bottom: 400px;
+}
+
+.top-text {
+  width: 500%;
+  max-width: 1100px;
+  margin: 0 auto;
+  display: table-cell;
+  vertical-align: middle;
+  position: relative;
+  color: black;
+}
+
+/* footer */
+footer{
+  margin-top: 15px;
+}
+
+.foot-panel1 {
+   background-color: black;
+   color: white;
+   height: 50px;
+   display: flex;
+   justify-content: center;
+   align-items: center;
+   font-size: 0.85rem;
+}
+
+a {
+  color: rgb (var(--bs-link-color-rgb), var(--bs-link-opacity, 1));
+  text-decoration: underline;
+  text-decoration: none;
+}
+.foot-panel2 {
+   background-color: #f9f8ef;
+   color: black;
+   height: 200px;
+   display: flex;
+   justify-content:space-evenly;
+}
+
+ul {
+   margin-top: 20px;
+}
+
+ul a {
+   display: block;
+   font-size: 0.85rem;
+   margin-top: 10px;
+   color: #f9f8ef;
+}
+
+.foot-panel3 {
+   background-color: #f9f8ef;
+   color: #f9f8ef;
+   border-top: 0.5px solid #f9f8ef;
+   height: 250px;
+   display: flex;
+   justify-content: center;
+   align-items: center;
+   border-bottom: 1px solid black;
+
+}
+
+
+.foot-panel4 {
+   background-color: black;
+   color: white;
+   height: 90px;
+   font-size: 0.7rem;
+   text-align: center;
+}
+
+.pages {
+   padding-top: 25px;
+}
+
+.copyright {
+   padding-top: 5px;
+}
