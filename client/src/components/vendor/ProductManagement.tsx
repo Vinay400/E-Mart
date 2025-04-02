@@ -24,15 +24,11 @@ function ProductManagement() {
   const [error, setError] = useState('');
   const [showUploadForm, setShowUploadForm] = useState(false);
 
-  useEffect(() => {
-    if (user) {
-      fetchProducts();
-    }
-  }, [user]);
-
   const fetchProducts = async () => {
+    if (!user) return;
+    
     try {
-      const q = query(collection(db, 'products'), where('vendorId', '==', user?.uid));
+      const q = query(collection(db, 'products'), where('vendorId', '==', user.uid));
       const querySnapshot = await getDocs(q);
       const productsData = querySnapshot.docs.map(doc => ({
         id: doc.id,
@@ -48,6 +44,10 @@ function ProductManagement() {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    fetchProducts();
+  }, [user]);
 
   const handleDelete = async (productId: string) => {
     if (!confirm('Are you sure you want to delete this product?')) return;
@@ -68,13 +68,27 @@ function ProductManagement() {
         updatedAt: new Date(),
       });
       setProducts(products.map(product =>
-        product.id === productId ? { ...product, stock: newStock } : product
+        product.id === productId ? { ...product, stock: newStock, updatedAt: new Date() } : product
       ));
     } catch (err) {
       console.error('Error updating stock:', err);
       setError('Failed to update stock');
     }
   };
+
+  const handleProductAdded = () => {
+    console.log('Product added, refreshing list...');
+    fetchProducts();
+    setShowUploadForm(false);
+  };
+
+  if (!user) {
+    return (
+      <div className="text-center text-red-600">
+        Please log in to manage products
+      </div>
+    );
+  }
 
   if (loading) {
     return <div className="text-center">Loading products...</div>;
@@ -93,13 +107,13 @@ function ProductManagement() {
       </div>
 
       {error && (
-        <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
+        <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4" role="alert">
           {error}
         </div>
       )}
 
       {showUploadForm ? (
-        <ProductUpload />
+        <ProductUpload onProductAdded={handleProductAdded} />
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {products.map(product => (
@@ -113,23 +127,26 @@ function ProductManagement() {
                 <h3 className="text-lg font-semibold mb-2">{product.name}</h3>
                 <p className="text-gray-600 mb-2">{product.description}</p>
                 <div className="flex justify-between items-center mb-2">
-                  <span className="text-lg font-bold">${product.price}</span>
+                  <span className="text-lg font-bold">${product.price.toFixed(2)}</span>
                   <span className="text-sm text-gray-500">Category: {product.category}</span>
                 </div>
                 <div className="flex items-center justify-between">
                   <div className="flex items-center space-x-2">
-                    <label className="text-sm text-gray-600">Stock:</label>
+                    <label htmlFor={`stock-${product.id}`} className="text-sm text-gray-600">Stock:</label>
                     <input
+                      id={`stock-${product.id}`}
                       type="number"
                       value={product.stock}
                       onChange={(e) => handleStockUpdate(product.id, parseInt(e.target.value))}
                       min="0"
                       className="w-20 rounded border border-gray-300 px-2 py-1"
+                      title="Update stock quantity"
                     />
                   </div>
                   <button
                     onClick={() => handleDelete(product.id)}
                     className="text-red-600 hover:text-red-800"
+                    title="Delete product"
                   >
                     Delete
                   </button>

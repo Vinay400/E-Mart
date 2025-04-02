@@ -1,0 +1,19 @@
+{
+  "name": "e-mart",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Vinay400/E-Mart.git"
+  },
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/Vinay400/E-Mart/issues"
+  },
+  "homepage": "https://github.com/Vinay400/E-Mart#readme"
+}
