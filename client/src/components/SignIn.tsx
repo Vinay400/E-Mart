@@ -29,7 +29,7 @@ function SignIn({ title }: { title: string }) {
                 navigate('/admin/dashboard');
                 break;
               case 'customer':
-                navigate('/');
+                navigate('/customer/dashboard');
                 break;
               default:
                 navigate('/');
@@ -43,7 +43,7 @@ function SignIn({ title }: { title: string }) {
               createdAt: new Date(),
               updatedAt: new Date(),
             });
-            navigate('/');
+            navigate('/customer/dashboard');
           }
         } catch (error) {
           console.error('Error fetching user role:', error);

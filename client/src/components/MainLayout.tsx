@@ -83,6 +83,13 @@ function MainLayout() {
                   {isUserMenuOpen && (
                     <div className="absolute right-0 mt-2 w-48 bg-white rounded-xl shadow-lg border border-gray-100">
                       <div className="py-1">
+                        <Link
+                          to="/customer/dashboard"
+                          className="flex items-center space-x-2 w-full px-4 py-2 text-left text-gray-700 hover:bg-indigo-50 hover:text-indigo-600"
+                        >
+                          <User className="h-5 w-5" />
+                          <span>My Dashboard</span>
+                        </Link>
                         <button
                           onClick={handleSignOut}
                           className="flex items-center space-x-2 w-full px-4 py-2 text-left text-gray-700 hover:bg-indigo-50 hover:text-indigo-600"

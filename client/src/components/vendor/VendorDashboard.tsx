@@ -6,6 +6,9 @@ import OrderManagement from './OrderManagement';
 import Earnings from './Earnings';
 import { auth } from '../../../firebaseconfig';
 import { signOut } from 'firebase/auth';
+import { motion } from 'framer-motion';
+import { FaBox, FaShoppingCart, FaMoneyBillWave, FaSignOutAlt } from 'react-icons/fa';
+import './VendorDashboard.css';
 
 function VendorDashboard() {
   const [activeTab, setActiveTab] = useState('products');
@@ -22,7 +25,11 @@ function VendorDashboard() {
   };
 
   if (loading) {
-    return <div className="flex justify-center items-center min-h-screen">Loading...</div>;
+    return (
+      <div className="flex justify-center items-center min-h-screen dashboard-container">
+        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-indigo-500"></div>
+      </div>
+    );
   }
 
   if (!isVendor) {
@@ -30,63 +37,95 @@ function VendorDashboard() {
     return null;
   }
 
+  const tabVariants = {
+    hidden: { opacity: 0, y: 20 },
+    visible: { opacity: 1, y: 0 }
+  };
+
   return (
-    <div className="min-h-screen bg-gray-100">
+    <div className="min-h-screen dashboard-container">
       <div className="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
-        <div className="px-4 py-6 sm:px-0">
-          <div className="flex justify-between items-center mb-8">
-            <h1 className="text-3xl font-bold text-gray-900">Vendor Dashboard</h1>
-            <button
+        <motion.div 
+          initial={{ opacity: 0, y: -20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5 }}
+          className="px-4 py-6 sm:px-0"
+        >
+          <div className="flex justify-between items-center mb-8 glass-card p-6 rounded-xl">
+            <div>
+              <h1 className="text-4xl font-bold bg-gradient-to-r from-indigo-600 to-purple-600 bg-clip-text text-transparent mb-2">Vendor Dashboard</h1>
+              <p className="text-gray-600">Manage your products, orders, and earnings</p>
+            </div>
+            <motion.button
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
               onClick={handleSignOut}
-              className="bg-red-600 text-white px-4 py-2 rounded-md hover:bg-red-700 transition-colors"
+              className="bg-gradient-to-r from-red-500 to-red-600 text-white px-6 py-3 rounded-lg hover:from-red-600 hover:to-red-700 transition-all duration-300 flex items-center gap-2 shadow-lg"
             >
+              <FaSignOutAlt />
               Sign Out
-            </button>
+            </motion.button>
           </div>
           
           {/* Navigation Tabs */}
-          <div className="border-b border-gray-200 mb-8">
-            <nav className="-mb-px flex space-x-8">
-              <button
+          <div className="glass-card rounded-xl p-2 mb-8">
+            <nav className="flex space-x-4">
+              <motion.button
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.98 }}
                 onClick={() => setActiveTab('products')}
                 className={`${
                   activeTab === 'products'
-                    ? 'border-indigo-500 text-indigo-600'
-                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                } whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm`}
+                    ? 'active-tab'
+                    : 'text-gray-600 hover:bg-gray-100'
+                } flex-1 py-3 px-4 rounded-lg font-medium text-sm transition-all duration-200 flex items-center justify-center gap-2 tab-button`}
               >
+                <FaBox />
                 Products
-              </button>
-              <button
+              </motion.button>
+              <motion.button
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.98 }}
                 onClick={() => setActiveTab('orders')}
                 className={`${
                   activeTab === 'orders'
-                    ? 'border-indigo-500 text-indigo-600'
-                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                } whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm`}
+                    ? 'active-tab'
+                    : 'text-gray-600 hover:bg-gray-100'
+                } flex-1 py-3 px-4 rounded-lg font-medium text-sm transition-all duration-200 flex items-center justify-center gap-2 tab-button`}
               >
+                <FaShoppingCart />
                 Orders
-              </button>
-              <button
+              </motion.button>
+              <motion.button
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.98 }}
                 onClick={() => setActiveTab('earnings')}
                 className={`${
                   activeTab === 'earnings'
-                    ? 'border-indigo-500 text-indigo-600'
-                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                } whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm`}
+                    ? 'active-tab'
+                    : 'text-gray-600 hover:bg-gray-100'
+                } flex-1 py-3 px-4 rounded-lg font-medium text-sm transition-all duration-200 flex items-center justify-center gap-2 tab-button`}
               >
+                <FaMoneyBillWave />
                 Earnings
-              </button>
+              </motion.button>
             </nav>
           </div>
 
           {/* Content Area */}
-          <div className="bg-white shadow rounded-lg p-6">
+          <motion.div
+            key={activeTab}
+            initial="hidden"
+            animate="visible"
+            variants={tabVariants}
+            transition={{ duration: 0.3 }}
+            className="content-card rounded-xl p-6"
+          >
             {activeTab === 'products' && <ProductManagement />}
             {activeTab === 'orders' && <OrderManagement />}
             {activeTab === 'earnings' && <Earnings />}
-          </div>
-        </div>
+          </motion.div>
+        </motion.div>
       </div>
     </div>
   );

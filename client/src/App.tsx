@@ -5,6 +5,7 @@ import MainLayout from './components/MainLayout';
 import Register from './components/Register';
 import ContactUs from './components/ContactUs';
 import VendorDashboard from './components/vendor/VendorDashboard';
+import CustomerDashboard from './components/customer/CustomerDashboard';
 
 function App() {
   return (
@@ -15,6 +16,7 @@ function App() {
         <Route path="/register" element={<Register />} />
         <Route path="/contactus" element={<ContactUs />} />
         <Route path="/vendor/dashboard" element={<VendorDashboard />} />
+        <Route path="/customer/dashboard" element={<CustomerDashboard />} />
       </Routes>
     </Router>
   );
