@@ -1,0 +1,5 @@
+{
+  "buildCommand": "cd client && chmod +x vercel-build.sh && ./vercel-build.sh",
+  "outputDirectory": "client/dist",
+  "framework": "vite"
+} 
