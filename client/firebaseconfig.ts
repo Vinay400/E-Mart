@@ -5,13 +5,13 @@ import { getFirestore, enableIndexedDbPersistence } from "firebase/firestore";
 import { getStorage } from "firebase/storage";
 
 const firebaseConfig = {
-  apiKey: "AIzaSyA8n45X0kiYT9lh8p4PnbqAfn1FRNqTSd8",
-  authDomain: "e-mart-app-42c98.firebaseapp.com",
-  projectId: "e-mart-app-42c98",
-  storageBucket: "e-mart-app-42c98.firebasestorage.app",
-  messagingSenderId: "552886338071",
-  appId: "1:552886338071:web:d748ae36228c55f5cc9252",
-  measurementId: "G-49M3XLXCYC"
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+  appId: import.meta.env.VITE_FIREBASE_APP_ID,
+  measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID
 };
 
 // Initialize Firebase
