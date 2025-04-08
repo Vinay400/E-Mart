@@ -104,9 +104,23 @@ function SignIn({ title }: { title: string }) {
           updatedAt: new Date(),
         });
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Google sign in error:', error);
-      setError('Failed to sign in with Google');
+      
+      // Handle specific error cases
+      if (error.code === 'auth/popup-closed-by-user') {
+        // User closed the popup without completing sign in
+        setError('Sign in was cancelled. Please try again.');
+      } else if (error.code === 'auth/popup-blocked') {
+        // Popup was blocked by the browser
+        setError('Sign in popup was blocked. Please allow popups for this site.');
+      } else if (error.code === 'auth/cancelled-popup-request') {
+        // Multiple popup requests were made
+        setError('Sign in was cancelled. Please try again.');
+      } else {
+        // Generic error message for other cases
+        setError('Failed to sign in with Google. Please try again.');
+      }
     } finally {
       setLoading(false);
     }
