@@ -1,5 +1,8 @@
 {
-  "buildCommand": "cd client && chmod +x vercel-build.sh && ./vercel-build.sh",
+  "buildCommand": "cd client && npm install && npm run build",
   "outputDirectory": "client/dist",
-  "framework": "vite"
+  "framework": "vite",
+  "rewrites": [
+    { "source": "/(.*)", "destination": "/index.html" }
+  ]
 } 
