@@ -14,34 +14,96 @@ import {
   FaShoppingCart,
   FaTrash,
   FaPlus,
-  FaMinus
+  FaMinus,
+  FaBox,
+  FaTruck,
+  FaCheckCircle,
+  FaClock,
+  FaEdit
 } from 'react-icons/fa';
-import { auth } from '../../../firebaseconfig';
+import { auth, db } from '../../../firebaseconfig';
 import { signOut } from 'firebase/auth';
-import { db } from '../../../firebaseconfig';
-import { collection, getDocs, query, where } from 'firebase/firestore';
+import { collection, getDocs, query, where, orderBy, Timestamp, serverTimestamp, updateDoc, doc, addDoc, deleteDoc } from 'firebase/firestore';
 import './CustomerDashboard.css';
 
-// Mock cart data - in a real app, this would come from a database or state management
-const initialCartItems: {
+interface CartItem {
   id: string;
   name: string;
   price: number;
   quantity: number;
   image: string;
   vendor: string;
-}[] = [];
+}
 
-function CustomerDashboard() {
+interface OrderItem {
+  id: string;
+  name: string;
+  price: number;
+  quantity: number;
+  image: string;
+  vendor: string;
+}
+
+interface Order {
+  id: string;
+  items: OrderItem[];
+  shippingInfo: {
+    fullName: string;
+    email: string;
+    phone: string;
+    address: string;
+    city: string;
+    state: string;
+    zipCode: string;
+    additionalNotes?: string;
+  };
+  total: number;
+  paymentMethod: string;
+  status: string;
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
+}
+
+interface ShippingAddress {
+  id: string;
+  fullName: string;
+  address: string;
+  city: string;
+  state: string;
+  zipCode: string;
+  phone: string;
+  isDefault: boolean;
+}
+
+interface CustomerDashboardProps {
+  cartItems: CartItem[];
+  setCartItems: React.Dispatch<React.SetStateAction<CartItem[]>>;
+}
+
+function CustomerDashboard({ cartItems, setCartItems }: CustomerDashboardProps) {
   const [activeTab, setActiveTab] = useState('browse');
   const { user, loading } = useAuth();
   const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState('');
-  const [cartItems, setCartItems] = useState(initialCartItems);
   const [products, setProducts] = useState<any[]>([]);
   const [loadingProducts, setLoadingProducts] = useState(true);
   const [notification, setNotification] = useState<{message: string, type: 'success' | 'error'} | null>(null);
   const [wishlistItems, setWishlistItems] = useState<any[]>([]);
+  const [orders, setOrders] = useState<Order[]>([]);
+  const [loadingOrders, setLoadingOrders] = useState(false);
+  const [addresses, setAddresses] = useState<ShippingAddress[]>([]);
+  const [loadingAddresses, setLoadingAddresses] = useState(false);
+  const [showAddressForm, setShowAddressForm] = useState(false);
+  const [editingAddress, setEditingAddress] = useState<ShippingAddress | null>(null);
+  const [addressForm, setAddressForm] = useState({
+    fullName: '',
+    address: '',
+    city: '',
+    state: '',
+    zipCode: '',
+    phone: '',
+    isDefault: false
+  });
 
   // Fetch products from Firestore
   useEffect(() => {
@@ -73,6 +135,88 @@ function CustomerDashboard() {
 
     fetchProducts();
   }, []);
+
+  // Fetch orders when the orders tab is active
+  useEffect(() => {
+    const fetchOrders = async () => {
+      if (activeTab === 'orders' && user) {
+        setLoadingOrders(true);
+        try {
+          const ordersQuery = query(
+            collection(db, 'orders'),
+            where('userId', '==', user.uid),
+            orderBy('createdAt', 'desc')
+          );
+          
+          const querySnapshot = await getDocs(ordersQuery);
+          const ordersData = querySnapshot.docs.map(doc => ({
+            id: doc.id,
+            ...doc.data()
+          })) as Order[];
+          
+          setOrders(ordersData);
+        } catch (error: any) {
+          console.error('Error fetching orders:', error);
+          // Check if the error is related to missing index
+          if (error.code === 'failed-precondition' && error.message.includes('index')) {
+            setNotification({ 
+              message: 'Orders are being indexed. Please try again in a few minutes.', 
+              type: 'error' 
+            });
+          } else {
+            setNotification({ 
+              message: 'Failed to load order history. Please try again later.', 
+              type: 'error' 
+            });
+          }
+        } finally {
+          setLoadingOrders(false);
+        }
+      }
+    };
+
+    fetchOrders();
+  }, [activeTab, user]);
+
+  // Fetch addresses when the addresses tab is active
+  useEffect(() => {
+    const fetchAddresses = async () => {
+      if (activeTab === 'addresses' && user) {
+        setLoadingAddresses(true);
+        try {
+          const addressesQuery = query(
+            collection(db, 'addresses'),
+            where('userId', '==', user.uid)
+          );
+          
+          const querySnapshot = await getDocs(addressesQuery);
+          const addressesData = querySnapshot.docs.map(doc => ({
+            id: doc.id,
+            ...doc.data()
+          })) as ShippingAddress[];
+          
+          setAddresses(addressesData);
+        } catch (error: any) {
+          console.error('Error fetching addresses:', error);
+          if (error.code === 'permission-denied') {
+            setNotification({ 
+              message: 'Permission denied. Please check your Firestore security rules.', 
+              type: 'error' 
+            });
+          } else {
+            setNotification({ 
+              message: 'Failed to load addresses. Please try again later.', 
+              type: 'error' 
+            });
+          }
+        } finally {
+          setLoadingAddresses(false);
+        }
+      }
+    };
+
+    fetchAddresses();
+  }, [activeTab, user]);
 
   const handleSignOut = async () => {
     try {
@@ -163,6 +307,168 @@ function CustomerDashboard() {
     product.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
     (product.description && product.description.toLowerCase().includes(searchQuery.toLowerCase()))
   );
+
+  const handleCheckout = () => {
+    if (cartItems.length === 0) {
+      setNotification({ message: 'Your cart is empty', type: 'error' });
+      return;
+    }
+    navigate('/checkout', { 
+      state: { 
+        cartItems, 
+        total: calculateTotal()
+      }
+    });
+  };
+
+  // Function to format date
+  const formatDate = (timestamp: Timestamp) => {
+    if (!timestamp) return 'N/A';
+    const date = timestamp.toDate();
+    return date.toLocaleDateString('en-US', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+  };
+
+  // Function to get status icon and color
+  const getStatusInfo = (status: string) => {
+    switch (status) {
+      case 'pending':
+        return { icon: <FaClock className="text-yellow-500" />, color: 'text-yellow-500', bgColor: 'bg-yellow-100' };
+      case 'processing':
+        return { icon: <FaBox className="text-blue-500" />, color: 'text-blue-500', bgColor: 'bg-blue-100' };
+      case 'shipped':
+        return { icon: <FaTruck className="text-indigo-500" />, color: 'text-indigo-500', bgColor: 'bg-indigo-100' };
+      case 'delivered':
+        return { icon: <FaCheckCircle className="text-green-500" />, color: 'text-green-500', bgColor: 'bg-green-100' };
+      case 'cancelled':
+        return { icon: <FaTrash className="text-red-500" />, color: 'text-red-500', bgColor: 'bg-red-100' };
+      default:
+        return { icon: <FaClock className="text-gray-500" />, color: 'text-gray-500', bgColor: 'bg-gray-100' };
+    }
+  };
+
+  const handleAddressSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!user) return;
+
+    try {
+      const addressData = {
+        ...addressForm,
+        userId: user.uid,
+        createdAt: serverTimestamp()
+      };
+
+      if (editingAddress) {
+        // Update existing address
+        await updateDoc(doc(db, 'addresses', editingAddress.id), addressData);
+        setNotification({ 
+          message: 'Address updated successfully', 
+          type: 'success' 
+        });
+      } else {
+        // Add new address
+        await addDoc(collection(db, 'addresses'), addressData);
+        setNotification({ 
+          message: 'Address added successfully', 
+          type: 'success' 
+        });
+      }
+
+      // Reset form and refresh addresses
+      setAddressForm({
+        fullName: '',
+        address: '',
+        city: '',
+        state: '',
+        zipCode: '',
+        phone: '',
+        isDefault: false
+      });
+      setShowAddressForm(false);
+      setEditingAddress(null);
+      
+      // Refresh addresses list
+      const addressesQuery = query(
+        collection(db, 'addresses'),
+        where('userId', '==', user.uid)
+      );
+      const querySnapshot = await getDocs(addressesQuery);
+      const addressesData = querySnapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      })) as ShippingAddress[];
+      setAddresses(addressesData);
+    } catch (error: any) {
+      console.error('Error saving address:', error);
+      if (error.code === 'permission-denied') {
+        setNotification({ 
+          message: 'Permission denied. Please check your Firestore security rules.', 
+          type: 'error' 
+        });
+      } else {
+        setNotification({ 
+          message: 'Failed to save address. Please try again later.', 
+          type: 'error' 
+        });
+      }
+    }
+  };
+
+  const handleEditAddress = (address: ShippingAddress) => {
+    setEditingAddress(address);
+    setAddressForm({
+      fullName: address.fullName,
+      address: address.address,
+      city: address.city,
+      state: address.state,
+      zipCode: address.zipCode,
+      phone: address.phone,
+      isDefault: address.isDefault
+    });
+    setShowAddressForm(true);
+  };
+
+  const handleDeleteAddress = async (addressId: string) => {
+    if (!user) return;
+
+    try {
+      await deleteDoc(doc(db, 'addresses', addressId));
+      setNotification({ 
+        message: 'Address deleted successfully', 
+        type: 'success' 
+      });
+      
+      // Refresh addresses list
+      const addressesQuery = query(
+        collection(db, 'addresses'),
+        where('userId', '==', user.uid)
+      );
+      const querySnapshot = await getDocs(addressesQuery);
+      const addressesData = querySnapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      })) as ShippingAddress[];
+      setAddresses(addressesData);
+    } catch (error: any) {
+      console.error('Error deleting address:', error);
+      if (error.code === 'permission-denied') {
+        setNotification({ 
+          message: 'Permission denied. Please check your Firestore security rules.', 
+          type: 'error' 
+        });
+      } else {
+        setNotification({ 
+          message: 'Failed to delete address. Please try again later.', 
+          type: 'error' 
+        });
+      }
+    }
+  };
 
   if (loading) {
     return (
@@ -360,6 +666,10 @@ function CustomerDashboard() {
                             src={product.imageUrl || 'https://via.placeholder.com/300'}
                             alt={product.name}
                             className="object-cover object-center"
+                            onError={(e) => {
+                              // Fallback to a default image if the original fails to load
+                              (e.target as HTMLImageElement).src = 'https://via.placeholder.com/300?text=No+Image';
+                            }}
                           />
                         </div>
                         <div className="mt-4">
@@ -410,10 +720,20 @@ function CustomerDashboard() {
               </div>
             )}
             {activeTab === 'cart' && (
-              <div>
-                <h2 className="text-2xl font-bold mb-6">Your Shopping Cart</h2>
-                {cartItems.length > 0 ? (
-                  <div>
+              <div className="bg-white rounded-lg shadow p-6">
+                <h2 className="text-2xl font-bold mb-6">Shopping Cart</h2>
+                {cartItems.length === 0 ? (
+                  <div className="text-center py-8">
+                    <p className="text-gray-500">Your cart is empty</p>
+                    <button
+                      onClick={() => setActiveTab('products')}
+                      className="mt-4 text-indigo-600 hover:text-indigo-800"
+                    >
+                      Continue Shopping
+                    </button>
+                  </div>
+                ) : (
+                  <>
                     <div className="overflow-x-auto">
                       <table className="min-w-full divide-y divide-gray-200">
                         <thead className="bg-gray-50">
@@ -493,26 +813,17 @@ function CustomerDashboard() {
                       </table>
                     </div>
                     <div className="mt-6 flex justify-between items-center">
-                      <div className="text-lg font-medium">
-                        Total: <span className="text-indigo-600 font-bold">${calculateTotal().toFixed(2)}</span>
+                      <div className="text-xl font-bold">
+                        Total: ${calculateTotal().toFixed(2)}
                       </div>
-                      <button className="bg-indigo-600 text-white px-6 py-3 rounded-lg hover:bg-indigo-700 transition-colors">
+                      <button
+                        onClick={handleCheckout}
+                        className="bg-indigo-600 text-white px-6 py-2 rounded-lg hover:bg-indigo-700 transition-colors"
+                      >
                         Proceed to Checkout
                       </button>
                     </div>
-                  </div>
-                ) : (
-                  <div className="text-center py-12">
-                    <FaShoppingCart className="mx-auto h-16 w-16 text-gray-400" />
-                    <h3 className="mt-4 text-lg font-medium text-gray-900">Your cart is empty</h3>
-                    <p className="mt-2 text-sm text-gray-500">Add some products to your cart to see them here</p>
-                    <button 
-                      onClick={() => setActiveTab('browse')}
-                      className="mt-4 bg-indigo-600 text-white px-6 py-3 rounded-lg hover:bg-indigo-700 transition-colors"
-                    >
-                      Browse Products
-                    </button>
-                  </div>
+                  </>
                 )}
               </div>
             )}
@@ -582,17 +893,256 @@ function CustomerDashboard() {
               </div>
             )}
             {activeTab === 'orders' && (
-              <div className="text-center py-8">
-                <FaHistory className="mx-auto h-12 w-12 text-gray-400" />
-                <h3 className="mt-2 text-lg font-medium text-gray-900">No orders yet</h3>
-                <p className="mt-1 text-sm text-gray-500">Your order history will appear here</p>
+              <div className="space-y-6">
+                <h2 className="text-2xl font-semibold text-gray-800">Order History</h2>
+                {loadingOrders ? (
+                  <div className="flex justify-center items-center py-8">
+                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
+                  </div>
+                ) : orders.length === 0 ? (
+                  <div className="text-center py-8">
+                    <FaShoppingBag className="mx-auto h-12 w-12 text-gray-400" />
+                    <h3 className="mt-2 text-sm font-medium text-gray-900">No orders yet</h3>
+                    <p className="mt-1 text-sm text-gray-500">Start shopping to place your first order!</p>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    {orders.map((order) => {
+                      const statusInfo = getStatusInfo(order.status);
+                      return (
+                        <div key={order.id} className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
+                          <div className="p-4 border-b border-gray-200">
+                            <div className="flex justify-between items-start">
+                              <div>
+                                <p className="text-sm font-medium text-gray-900">Order #{order.id.slice(-6)}</p>
+                                <p className="text-sm text-gray-500">Placed on {formatDate(order.createdAt)}</p>
+                              </div>
+                              <div className={`flex items-center space-x-2 px-3 py-1 rounded-full ${statusInfo.bgColor}`}>
+                                {statusInfo.icon}
+                                <span className={`text-sm font-medium ${statusInfo.color}`}>
+                                  {order.status.charAt(0).toUpperCase() + order.status.slice(1)}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+                          <div className="p-4">
+                            <div className="space-y-4">
+                              {order.items.map((item, index) => (
+                                <div key={index} className="flex items-center space-x-4">
+                                  <img 
+                                    src={item.image} 
+                                    alt={item.name} 
+                                    className="h-16 w-16 object-cover rounded-md"
+                                    onError={(e) => {
+                                      // Fallback to a default image if the original fails to load
+                                      (e.target as HTMLImageElement).src = 'https://via.placeholder.com/150?text=No+Image';
+                                    }}
+                                  />
+                                  <div className="flex-1">
+                                    <h4 className="text-sm font-medium text-gray-900">{item.name}</h4>
+                                    <p className="text-sm text-gray-500">Quantity: {item.quantity}</p>
+                                    <p className="text-sm font-medium text-gray-900">${item.price.toFixed(2)}</p>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                            <div className="mt-4 pt-4 border-t border-gray-200">
+                              <div className="flex justify-between items-center">
+                                <div>
+                                  <p className="text-sm text-gray-500">Shipping Address:</p>
+                                  <p className="text-sm text-gray-900">
+                                    {order.shippingInfo.address}, {order.shippingInfo.city}, {order.shippingInfo.state} {order.shippingInfo.zipCode}
+                                  </p>
+                                </div>
+                                <div className="text-right">
+                                  <p className="text-sm text-gray-500">Total Amount</p>
+                                  <p className="text-lg font-semibold text-gray-900">${order.total.toFixed(2)}</p>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             )}
             {activeTab === 'addresses' && (
-              <div className="text-center py-8">
-                <FaMapMarkerAlt className="mx-auto h-12 w-12 text-gray-400" />
-                <h3 className="mt-2 text-lg font-medium text-gray-900">No addresses saved</h3>
-                <p className="mt-1 text-sm text-gray-500">Add your shipping addresses here</p>
+              <div className="space-y-6">
+                <div className="flex justify-between items-center">
+                  <h2 className="text-2xl font-semibold text-gray-800">Shipping Addresses</h2>
+                  <button
+                    onClick={() => {
+                      setShowAddressForm(true);
+                      setEditingAddress(null);
+                      setAddressForm({
+                        fullName: '',
+                        address: '',
+                        city: '',
+                        state: '',
+                        zipCode: '',
+                        phone: '',
+                        isDefault: false
+                      });
+                    }}
+                    className="bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 transition-colors flex items-center gap-2"
+                  >
+                    <FaPlus />
+                    Add New Address
+                  </button>
+                </div>
+
+                {loadingAddresses ? (
+                  <div className="flex justify-center items-center py-8">
+                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
+                  </div>
+                ) : addresses.length === 0 ? (
+                  <div className="text-center py-8">
+                    <FaMapMarkerAlt className="mx-auto h-12 w-12 text-gray-400" />
+                    <h3 className="mt-2 text-sm font-medium text-gray-900">No addresses saved</h3>
+                    <p className="mt-1 text-sm text-gray-500">Add your shipping addresses here</p>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {addresses.map((address) => (
+                      <div key={address.id} className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
+                        <div className="flex justify-between items-start">
+                          <div>
+                            <h3 className="font-medium text-gray-900">{address.fullName}</h3>
+                            <p className="text-sm text-gray-500">{address.address}</p>
+                            <p className="text-sm text-gray-500">
+                              {address.city}, {address.state} {address.zipCode}
+                            </p>
+                            <p className="text-sm text-gray-500">{address.phone}</p>
+                            {address.isDefault && (
+                              <span className="inline-block mt-2 px-2 py-1 text-xs font-medium bg-green-100 text-green-800 rounded-full">
+                                Default Address
+                              </span>
+                            )}
+                          </div>
+                          <div className="flex space-x-2">
+                            <button
+                              onClick={() => handleEditAddress(address)}
+                              className="text-indigo-600 hover:text-indigo-800"
+                            >
+                              <FaEdit />
+                            </button>
+                            <button
+                              onClick={() => handleDeleteAddress(address.id)}
+                              className="text-red-600 hover:text-red-800"
+                            >
+                              <FaTrash />
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {showAddressForm && (
+                  <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4">
+                    <div className="bg-white rounded-lg p-6 max-w-md w-full">
+                      <h3 className="text-lg font-medium text-gray-900 mb-4">
+                        {editingAddress ? 'Edit Address' : 'Add New Address'}
+                      </h3>
+                      <form onSubmit={handleAddressSubmit} className="space-y-4">
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700">Full Name</label>
+                          <input
+                            type="text"
+                            value={addressForm.fullName}
+                            onChange={(e) => setAddressForm({ ...addressForm, fullName: e.target.value })}
+                            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+                            required
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700">Address</label>
+                          <input
+                            type="text"
+                            value={addressForm.address}
+                            onChange={(e) => setAddressForm({ ...addressForm, address: e.target.value })}
+                            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+                            required
+                          />
+                        </div>
+                        <div className="grid grid-cols-2 gap-4">
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700">City</label>
+                            <input
+                              type="text"
+                              value={addressForm.city}
+                              onChange={(e) => setAddressForm({ ...addressForm, city: e.target.value })}
+                              className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+                              required
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700">State</label>
+                            <input
+                              type="text"
+                              value={addressForm.state}
+                              onChange={(e) => setAddressForm({ ...addressForm, state: e.target.value })}
+                              className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+                              required
+                            />
+                          </div>
+                        </div>
+                        <div className="grid grid-cols-2 gap-4">
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700">ZIP Code</label>
+                            <input
+                              type="text"
+                              value={addressForm.zipCode}
+                              onChange={(e) => setAddressForm({ ...addressForm, zipCode: e.target.value })}
+                              className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+                              required
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700">Phone</label>
+                            <input
+                              type="tel"
+                              value={addressForm.phone}
+                              onChange={(e) => setAddressForm({ ...addressForm, phone: e.target.value })}
+                              className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+                              required
+                            />
+                          </div>
+                        </div>
+                        <div className="flex items-center">
+                          <input
+                            type="checkbox"
+                            checked={addressForm.isDefault}
+                            onChange={(e) => setAddressForm({ ...addressForm, isDefault: e.target.checked })}
+                            className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
+                          />
+                          <label className="ml-2 block text-sm text-gray-900">Set as default address</label>
+                        </div>
+                        <div className="flex justify-end space-x-3 mt-6">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setShowAddressForm(false);
+                              setEditingAddress(null);
+                            }}
+                            className="px-4 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50"
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            type="submit"
+                            className="px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700"
+                          >
+                            {editingAddress ? 'Update Address' : 'Add Address'}
+                          </button>
+                        </div>
+                      </form>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
             {activeTab === 'payment' && (

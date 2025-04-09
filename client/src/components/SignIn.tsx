@@ -117,6 +117,9 @@ function SignIn({ title }: { title: string }) {
       } else if (error.code === 'auth/cancelled-popup-request') {
         // Multiple popup requests were made
         setError('Sign in was cancelled. Please try again.');
+      } else if (error.code === 'auth/unauthorized-domain') {
+        // Domain is not authorized in Firebase
+        setError('This domain is not authorized for sign-in. Please contact the administrator or try signing in with email and password.');
       } else {
         // Generic error message for other cases
         setError('Failed to sign in with Google. Please try again.');
