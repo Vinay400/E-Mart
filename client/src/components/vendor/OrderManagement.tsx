@@ -1,7 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { db } from '../../../firebaseconfig';
-import { collection, query, where, getDocs, updateDoc, doc } from 'firebase/firestore';
+import { collection, query, where, onSnapshot, updateDoc, doc } from 'firebase/firestore';
 import { useAuth } from '../../hooks/useAuth';
+import { motion } from 'framer-motion';
+import { FaBox, FaTruck, FaCheckCircle, FaTimesCircle, FaClock } from 'react-icons/fa';
 
 interface Order {
   id: string;
@@ -16,7 +18,13 @@ interface Order {
   totalAmount: number;
   status: 'pending' | 'processing' | 'shipped' | 'delivered' | 'cancelled';
   createdAt: Date;
-  vendorId: string;
+  userId: string;
+  shippingAddress: {
+    street: string;
+    city: string;
+    state: string;
+    zipCode: string;
+  };
 }
 
 function OrderManagement() {
@@ -26,134 +34,193 @@ function OrderManagement() {
   const { user } = useAuth();
 
   useEffect(() => {
-    fetchOrders();
-  }, []);
+    let unsubscribe: () => void;
 
-  const fetchOrders = async () => {
-    try {
-      if (!user) return;
-      
-      const q = query(
-        collection(db, 'orders'),
-        where('vendorId', '==', user.uid)
-      );
-      
-      const querySnapshot = await getDocs(q);
-      const ordersData = querySnapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data(),
-        createdAt: doc.data().createdAt?.toDate()
-      })) as Order[];
-      
-      setOrders(ordersData.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime()));
-    } catch (err) {
-      console.error('Error fetching orders:', err);
-      setError('Failed to fetch orders');
-    } finally {
-      setLoading(false);
-    }
-  };
+    const setupOrderListener = async () => {
+      try {
+        if (!user) return;
+
+        const q = query(
+          collection(db, 'orders'),
+          where('vendorId', '==', user.uid)
+        );
+
+        unsubscribe = onSnapshot(q, (querySnapshot) => {
+          const ordersData = querySnapshot.docs.map(doc => ({
+            id: doc.id,
+            ...doc.data(),
+            createdAt: doc.data().createdAt?.toDate()
+          })) as Order[];
+          
+          setOrders(ordersData.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime()));
+          setLoading(false);
+        }, (err) => {
+          console.error('Error listening to orders:', err);
+          setError('Failed to fetch orders. Please try again later.');
+          setLoading(false);
+        });
+
+      } catch (err) {
+        console.error('Error setting up order listener:', err);
+        setError('Failed to fetch orders. Please try again later.');
+        setLoading(false);
+      }
+    };
+
+    setupOrderListener();
+
+    // Cleanup function to unsubscribe from the listener
+    return () => {
+      if (unsubscribe) {
+        unsubscribe();
+      }
+    };
+  }, [user]);
 
   const handleUpdateOrderStatus = async (orderId: string, newStatus: Order['status']) => {
     try {
-      await updateDoc(doc(db, 'orders', orderId), {
-        status: newStatus
-      });
-      fetchOrders();
+      const orderRef = doc(db, 'orders', orderId);
+      await updateDoc(orderRef, { status: newStatus });
     } catch (err) {
       console.error('Error updating order status:', err);
-      setError('Failed to update order status');
+      setError('Failed to update order status. Please try again.');
+    }
+  };
+
+  const getStatusIcon = (status: Order['status']) => {
+    switch (status) {
+      case 'pending':
+        return <FaClock className="text-yellow-500" />;
+      case 'processing':
+        return <FaBox className="text-blue-500" />;
+      case 'shipped':
+        return <FaTruck className="text-indigo-500" />;
+      case 'delivered':
+        return <FaCheckCircle className="text-green-500" />;
+      case 'cancelled':
+        return <FaTimesCircle className="text-red-500" />;
+      default:
+        return null;
+    }
+  };
+
+  const getStatusColor = (status: Order['status']) => {
+    switch (status) {
+      case 'pending':
+        return 'bg-yellow-100 text-yellow-800';
+      case 'processing':
+        return 'bg-blue-100 text-blue-800';
+      case 'shipped':
+        return 'bg-indigo-100 text-indigo-800';
+      case 'delivered':
+        return 'bg-green-100 text-green-800';
+      case 'cancelled':
+        return 'bg-red-100 text-red-800';
+      default:
+        return 'bg-gray-100 text-gray-800';
     }
   };
 
   if (loading) {
-    return <div>Loading...</div>;
+    return (
+      <div className="flex justify-center items-center min-h-[400px]">
+        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-indigo-500"></div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="text-center text-red-500 p-4">
+        {error}
+      </div>
+    );
   }
 
   return (
-    <div>
-      <h2 className="text-2xl font-semibold text-gray-900 mb-6">Orders</h2>
+    <div className="space-y-6">
+      <div className="flex justify-between items-center">
+        <h2 className="text-2xl font-bold text-gray-800">Order Management</h2>
+        <div className="text-sm text-gray-500">
+          Total Orders: {orders.length}
+        </div>
+      </div>
 
-      {error && (
-        <div className="bg-red-100 text-red-600 p-3 rounded mb-4">{error}</div>
-      )}
+      <div className="grid gap-6">
+        {orders.map((order) => (
+          <motion.div
+            key={order.id}
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="bg-white rounded-xl shadow-sm p-6"
+          >
+            <div className="flex justify-between items-start mb-4">
+              <div>
+                <h3 className="text-lg font-semibold text-gray-800">
+                  Order #{order.id.slice(0, 8)}
+                </h3>
+                <p className="text-sm text-gray-500">
+                  Customer: {order.customerName}
+                </p>
+                <p className="text-sm text-gray-500">
+                  Date: {order.createdAt.toLocaleDateString()}
+                </p>
+              </div>
+              <div className={`px-3 py-1 rounded-full text-sm font-medium flex items-center gap-2 ${getStatusColor(order.status)}`}>
+                {getStatusIcon(order.status)}
+                {order.status.charAt(0).toUpperCase() + order.status.slice(1)}
+              </div>
+            </div>
 
-      <div className="overflow-x-auto">
-        <table className="min-w-full divide-y divide-gray-200">
-          <thead className="bg-gray-50">
-            <tr>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Order ID
-              </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Customer
-              </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Items
-              </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Total
-              </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Status
-              </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Date
-              </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Actions
-              </th>
-            </tr>
-          </thead>
-          <tbody className="bg-white divide-y divide-gray-200">
-            {orders.map((order) => (
-              <tr key={order.id}>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                  {order.id.slice(0, 8)}...
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                  {order.customerName}
-                </td>
-                <td className="px-6 py-4 text-sm text-gray-900">
-                  {order.items.map((item, index) => (
-                    <div key={index}>
-                      {item.name} x {item.quantity}
+            <div className="border-t border-gray-200 pt-4">
+              <h4 className="font-medium text-gray-700 mb-2">Order Items</h4>
+              <div className="space-y-2">
+                {order.items.map((item, index) => (
+                  <div key={index} className="flex justify-between items-center">
+                    <div>
+                      <p className="text-gray-800">{item.name}</p>
+                      <p className="text-sm text-gray-500">Qty: {item.quantity}</p>
                     </div>
-                  ))}
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                  ${order.totalAmount.toFixed(2)}
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap">
-                  <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full 
-                    ${order.status === 'pending' ? 'bg-yellow-100 text-yellow-800' : ''}
-                    ${order.status === 'processing' ? 'bg-blue-100 text-blue-800' : ''}
-                    ${order.status === 'shipped' ? 'bg-purple-100 text-purple-800' : ''}
-                    ${order.status === 'delivered' ? 'bg-green-100 text-green-800' : ''}
-                    ${order.status === 'cancelled' ? 'bg-red-100 text-red-800' : ''}`}>
-                    {order.status}
-                  </span>
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                  {order.createdAt.toLocaleDateString()}
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                    <p className="text-gray-800">${(item.price * item.quantity).toFixed(2)}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="border-t border-gray-200 pt-4 mt-4">
+              <div className="flex justify-between items-center">
+                <div>
+                  <h4 className="font-medium text-gray-700">Shipping Address</h4>
+                  <p className="text-sm text-gray-600">
+                    {order.shippingAddress.street}, {order.shippingAddress.city}, {order.shippingAddress.state} {order.shippingAddress.zipCode}
+                  </p>
+                </div>
+                <div className="text-right">
+                  <p className="text-sm text-gray-500">Total Amount</p>
+                  <p className="text-xl font-bold text-gray-800">${order.totalAmount.toFixed(2)}</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="border-t border-gray-200 pt-4 mt-4">
+              <div className="flex justify-end gap-2">
+                {order.status !== 'delivered' && order.status !== 'cancelled' && (
                   <select
                     value={order.status}
                     onChange={(e) => handleUpdateOrderStatus(order.id, e.target.value as Order['status'])}
-                    className="rounded-md border-gray-300 text-sm"
+                    className="rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
                   >
                     <option value="pending">Pending</option>
                     <option value="processing">Processing</option>
                     <option value="shipped">Shipped</option>
                     <option value="delivered">Delivered</option>
-                    <option value="cancelled">Cancelled</option>
+                    <option value="cancelled">Cancel</option>
                   </select>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+                )}
+              </div>
+            </div>
+          </motion.div>
+        ))}
       </div>
     </div>
   );
