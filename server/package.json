@@ -1,0 +1,19 @@
+{
+  "name": "e-mart-server",
+  "version": "1.0.0",
+  "description": "E-Mart server with Razorpay integration",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "nodemon index.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^16.3.1",
+    "express": "^4.21.2",
+    "razorpay": "^2.9.6"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.1"
+  }
+}

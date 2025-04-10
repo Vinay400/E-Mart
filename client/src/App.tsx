@@ -74,7 +74,7 @@ function AppRoutes() {
           <Navigate to="/signin" state={{ from: location }} replace />
         )
       } />
-      <Route path="/order-confirmation/:orderId" element={
+      <Route path="/order-confirmation" element={
         user ? <OrderConfirmation /> : 
         <Navigate to="/signin" state={{ from: location }} replace />
       } />

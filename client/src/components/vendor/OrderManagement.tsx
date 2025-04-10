@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { db } from '../../../firebaseconfig';
-import { collection, query, where, onSnapshot, updateDoc, doc } from 'firebase/firestore';
+import { collection, query, onSnapshot, updateDoc, doc } from 'firebase/firestore';
 import { useAuth } from '../../hooks/useAuth';
 import { motion } from 'framer-motion';
 import { FaBox, FaTruck, FaCheckCircle, FaTimesCircle, FaClock } from 'react-icons/fa';
@@ -14,11 +14,17 @@ interface Order {
     name: string;
     quantity: number;
     price: number;
+    image: string;
+    vendorId: string;
+    vendor: string;
   }[];
   totalAmount: number;
+  subtotal: number;
+  shipping: number;
   status: 'pending' | 'processing' | 'shipped' | 'delivered' | 'cancelled';
+  paymentStatus: string;
+  paymentMethod: 'cod' | 'online';
   createdAt: Date;
-  userId: string;
   shippingAddress: {
     street: string;
     city: string;
@@ -34,42 +40,94 @@ function OrderManagement() {
   const { user } = useAuth();
 
   useEffect(() => {
+    if (!user) {
+      console.log('No user found');
+      setLoading(false);
+      return;
+    }
+
+    console.log('Current user ID:', user.uid);
+
     let unsubscribe: () => void;
 
-    const setupOrderListener = async () => {
-      try {
-        if (!user) return;
+    try {
+      // Create a query for all orders
+      const ordersRef = collection(db, 'orders');
+      const ordersQuery = query(ordersRef);
 
-        const q = query(
-          collection(db, 'orders'),
-          where('vendorId', '==', user.uid)
-        );
+      unsubscribe = onSnapshot(
+        ordersQuery,
+        (snapshot) => {
+          try {
+            console.log('Total documents in snapshot:', snapshot.docs.length);
+            
+            const ordersData = snapshot.docs.map(doc => {
+              const data = doc.data();
+              console.log('Raw order data:', { id: doc.id, ...data });
+              return {
+                id: doc.id,
+                ...data,
+                createdAt: data.createdAt?.toDate() || new Date(),
+                items: data.items || []
+              } as Order;
+            });
 
-        unsubscribe = onSnapshot(q, (querySnapshot) => {
-          const ordersData = querySnapshot.docs.map(doc => ({
-            id: doc.id,
-            ...doc.data(),
-            createdAt: doc.data().createdAt?.toDate()
-          })) as Order[];
-          
-          setOrders(ordersData.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime()));
-          setLoading(false);
-        }, (err) => {
+            // Filter orders that have items from this vendor
+            const vendorOrders = ordersData.filter(order => {
+              // Check if the order has any items from this vendor
+              const hasVendorItems = order.items?.some(item => {
+                // Log the comparison details
+                console.log('Checking item in order:', {
+                  orderId: order.id,
+                  itemId: item.productId,
+                  itemName: item.name,
+                  itemVendorId: item.vendorId,
+                  currentVendorId: user.uid
+                });
+                
+                // Strict equality comparison
+                const isVendorItem = item.vendorId === user.uid;
+                if (isVendorItem) {
+                  console.log('Found matching vendor item:', {
+                    orderId: order.id,
+                    item: item
+                  });
+                }
+                return isVendorItem;
+              });
+
+              if (!hasVendorItems) {
+                console.log('Order', order.id, 'has no items from vendor', user.uid);
+              } else {
+                console.log('Order', order.id, 'has items from vendor', user.uid);
+              }
+
+              return hasVendorItems;
+            });
+
+            console.log('Final filtered vendor orders:', vendorOrders);
+
+            setOrders(vendorOrders.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime()));
+            setLoading(false);
+            setError('');
+          } catch (err) {
+            console.error('Error processing orders data:', err);
+            setError('Error processing orders data. Please try again.');
+            setLoading(false);
+          }
+        },
+        (err) => {
           console.error('Error listening to orders:', err);
           setError('Failed to fetch orders. Please try again later.');
           setLoading(false);
-        });
+        }
+      );
+    } catch (err) {
+      console.error('Error setting up order listener:', err);
+      setError('Failed to set up orders listener. Please try again.');
+      setLoading(false);
+    }
 
-      } catch (err) {
-        console.error('Error setting up order listener:', err);
-        setError('Failed to fetch orders. Please try again later.');
-        setLoading(false);
-      }
-    };
-
-    setupOrderListener();
-
-    // Cleanup function to unsubscribe from the listener
     return () => {
       if (unsubscribe) {
         unsubscribe();
@@ -175,7 +233,9 @@ function OrderManagement() {
             <div className="border-t border-gray-200 pt-4">
               <h4 className="font-medium text-gray-700 mb-2">Order Items</h4>
               <div className="space-y-2">
-                {order.items.map((item, index) => (
+                {order.items
+                  .filter(item => item.vendorId === user?.uid)
+                  .map((item, index) => (
                   <div key={index} className="flex justify-between items-center">
                     <div>
                       <p className="text-gray-800">{item.name}</p>

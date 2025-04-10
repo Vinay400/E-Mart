@@ -1,70 +1,109 @@
 import React, { useEffect, useState } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
-import { doc, getDoc } from 'firebase/firestore';
+import { useLocation, useNavigate } from 'react-router-dom';
+import { FaCheckCircle, FaSpinner, FaExclamationTriangle } from 'react-icons/fa';
 import { db } from '../../../firebaseconfig';
-import { FaCheckCircle, FaShoppingBag, FaTruck } from 'react-icons/fa';
+import { doc, getDoc } from 'firebase/firestore';
+import './OrderConfirmation.css';
 
-interface OrderItem {
+interface OrderDetails {
   id: string;
-  name: string;
-  price: number;
-  quantity: number;
-  image: string;
-  vendor: string;
-}
-
-interface OrderData {
-  id: string;
-  items: OrderItem[];
-  shippingInfo: {
-    fullName: string;
-    email: string;
-    address: string;
+  items: Array<{
+    name: string;
+    quantity: number;
+    price: number;
+    image?: string;
+    vendorId?: string;
+    vendor?: string;
+  }>;
+  customerId: string;
+  customerName: string;
+  subtotal: number;
+  shipping: number;
+  totalAmount: number;
+  shippingAddress: {
+    street: string;
     city: string;
     state: string;
     zipCode: string;
-    phone: string;
   };
-  total: number;
+  paymentMethod: 'cod' | 'online';
+  paymentStatus: string;
   status: string;
-  createdAt: any;
+  createdAt: {
+    seconds: number;
+    nanoseconds: number;
+  };
 }
 
 const OrderConfirmation: React.FC = () => {
-  const { orderId } = useParams<{ orderId: string }>();
+  const location = useLocation();
   const navigate = useNavigate();
-  const [order, setOrder] = useState<OrderData | null>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [order, setOrder] = useState<OrderDetails | null>(null);
 
   useEffect(() => {
-    const fetchOrder = async () => {
-      if (!orderId) return;
-
+    const fetchOrderDetails = async () => {
       try {
-        const orderDoc = await getDoc(doc(db, 'orders', orderId));
-        if (orderDoc.exists()) {
-          setOrder({ id: orderDoc.id, ...orderDoc.data() } as OrderData);
-        } else {
-          setError('Order not found');
+        // Check if we have the orderId in location state
+        const orderId = location.state?.orderId;
+        if (!orderId) {
+          setError('No order ID provided');
+          setLoading(false);
+          return;
         }
-      } catch (err) {
-        console.error('Error fetching order:', err);
+
+        console.log('Fetching order details for ID:', orderId);
+        const orderRef = doc(db, 'orders', orderId);
+        const orderDoc = await getDoc(orderRef);
+
+        if (!orderDoc.exists()) {
+          setError('Order not found');
+          setLoading(false);
+          return;
+        }
+
+        const orderData = orderDoc.data();
+        console.log('Retrieved order data:', orderData);
+
+        // Validate required fields
+        if (!orderData.items || !orderData.shippingAddress) {
+          setError('Invalid order data');
+          setLoading(false);
+          return;
+        }
+
+        setOrder({
+          id: orderDoc.id,
+          items: orderData.items || [],
+          customerId: orderData.customerId,
+          customerName: orderData.customerName,
+          subtotal: orderData.subtotal || 0,
+          shipping: orderData.shipping || 0,
+          totalAmount: orderData.totalAmount || 0,
+          shippingAddress: orderData.shippingAddress,
+          paymentMethod: orderData.paymentMethod || 'cod',
+          paymentStatus: orderData.paymentStatus || 'pending',
+          status: orderData.status || 'pending',
+          createdAt: orderData.createdAt
+        });
+      } catch (error) {
+        console.error('Error fetching order:', error);
         setError('Failed to load order details');
       } finally {
         setLoading(false);
       }
     };
 
-    fetchOrder();
-  }, [orderId]);
+    fetchOrderDetails();
+  }, [location.state]);
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600 mx-auto"></div>
-          <p className="mt-4 text-gray-600">Loading order details...</p>
+      <div className="order-confirmation-container">
+        <div className="loading">
+          <FaSpinner className="spinner" />
+          <p>Loading order details...</p>
         </div>
       </div>
     );
@@ -72,14 +111,15 @@ const OrderConfirmation: React.FC = () => {
 
   if (error || !order) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <div className="text-center">
-          <div className="text-red-600 text-xl mb-4">{error || 'Order not found'}</div>
-          <button
-            onClick={() => navigate('/customer/dashboard')}
-            className="text-indigo-600 hover:text-indigo-800"
+      <div className="order-confirmation-container">
+        <div className="error">
+          <FaExclamationTriangle className="error-icon" />
+          <p>{error || 'Order not found'}</p>
+          <button 
+            onClick={() => navigate('/dashboard')} 
+            className="back-button"
           >
-            Return to Dashboard
+            Back to Dashboard
           </button>
         </div>
       </div>
@@ -87,87 +127,72 @@ const OrderConfirmation: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 py-8">
-      <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="bg-white rounded-lg shadow-lg overflow-hidden">
-          {/* Header */}
-          <div className="bg-indigo-600 px-6 py-8 text-center text-white">
-            <FaCheckCircle className="text-5xl mx-auto mb-4" />
-            <h1 className="text-2xl font-bold">Order Confirmed!</h1>
-            <p className="mt-2">Thank you for your purchase</p>
-          </div>
+    <div className="order-confirmation-container">
+      <div className="success-message">
+        <FaCheckCircle className="success-icon" />
+        <h1>Order Confirmed!</h1>
+        <p>Thank you for your purchase</p>
+      </div>
 
-          {/* Order Details */}
-          <div className="p-6">
-            <div className="border-b pb-4 mb-4">
-              <h2 className="text-lg font-semibold mb-2">Order #{order.id}</h2>
-              <p className="text-gray-600">
-                {order.createdAt?.toDate().toLocaleDateString()}
-              </p>
-            </div>
+      <div className="order-details">
+        <h2>Order Details</h2>
+        <p className="order-id">Order ID: {order.id}</p>
 
-            {/* Items */}
-            <div className="space-y-4 mb-6">
-              <h3 className="font-semibold flex items-center">
-                <FaShoppingBag className="mr-2" />
-                Order Items
-              </h3>
-              {order.items.map((item) => (
-                <div key={item.id} className="flex items-center space-x-4">
-                  <img
-                    src={item.image}
-                    alt={item.name}
-                    className="w-16 h-16 object-cover rounded"
-                  />
-                  <div className="flex-1">
-                    <h4 className="font-medium">{item.name}</h4>
-                    <p className="text-sm text-gray-500">Quantity: {item.quantity}</p>
-                    <p className="text-sm text-gray-500">Vendor: {item.vendor}</p>
-                  </div>
-                  <p className="font-medium">${(item.price * item.quantity).toFixed(2)}</p>
-                </div>
-              ))}
-            </div>
-
-            {/* Shipping Information */}
-            <div className="border-t pt-4 mb-6">
-              <h3 className="font-semibold flex items-center mb-2">
-                <FaTruck className="mr-2" />
-                Shipping Information
-              </h3>
-              <div className="text-gray-600">
-                <p>{order.shippingInfo.fullName}</p>
-                <p>{order.shippingInfo.address}</p>
-                <p>
-                  {order.shippingInfo.city}, {order.shippingInfo.state} {order.shippingInfo.zipCode}
-                </p>
-                <p>{order.shippingInfo.phone}</p>
-                <p>{order.shippingInfo.email}</p>
+        <div className="items-list">
+          <h3>Items</h3>
+          {order.items.map((item, index) => (
+            <div key={index} className="order-item">
+              <div className="item-info">
+                <span className="item-name">{item.name}</span>
+                <span className="item-quantity">x{item.quantity}</span>
               </div>
+              <span className="item-price">₹{(item.price * item.quantity).toFixed(2)}</span>
             </div>
+          ))}
+        </div>
 
-            {/* Order Summary */}
-            <div className="border-t pt-4">
-              <div className="flex justify-between mb-2">
-                <span>Subtotal</span>
-                <span>${order.total.toFixed(2)}</span>
-              </div>
-              <div className="flex justify-between font-bold text-lg">
-                <span>Total</span>
-                <span>${order.total.toFixed(2)}</span>
-              </div>
-            </div>
-          </div>
+        <div className="shipping-details">
+          <h3>Shipping Details</h3>
+          <p>{order.customerName}</p>
+          <p>{order.shippingAddress.street}</p>
+          <p>
+            {order.shippingAddress.city}, {order.shippingAddress.state} {order.shippingAddress.zipCode}
+          </p>
+        </div>
 
-          {/* Actions */}
-          <div className="bg-gray-50 px-6 py-4">
-            <button
-              onClick={() => navigate('/customer/dashboard')}
-              className="w-full bg-indigo-600 text-white py-2 rounded-lg hover:bg-indigo-700 transition-colors"
-            >
-              Return to Dashboard
-            </button>
+        <div className="payment-details">
+          <h3>Payment Details</h3>
+          <div className="detail-row">
+            <span>Subtotal:</span>
+            <span>₹{order.subtotal.toFixed(2)}</span>
           </div>
+          <div className="detail-row">
+            <span>Shipping:</span>
+            <span>₹{order.shipping.toFixed(2)}</span>
+          </div>
+          <div className="detail-row total">
+            <span>Total Amount:</span>
+            <span>₹{order.totalAmount.toFixed(2)}</span>
+          </div>
+          <div className="detail-row">
+            <span>Payment Method:</span>
+            <span>{order.paymentMethod === 'cod' ? 'Cash on Delivery' : 'Online Payment'}</span>
+          </div>
+          <div className="detail-row">
+            <span>Status:</span>
+            <span className={`status ${order.paymentStatus}`}>
+              {order.paymentStatus.charAt(0).toUpperCase() + order.paymentStatus.slice(1)}
+            </span>
+          </div>
+        </div>
+
+        <div className="actions">
+          <button 
+            onClick={() => navigate('/dashboard')} 
+            className="continue-shopping"
+          >
+            Back to Dashboard
+          </button>
         </div>
       </div>
     </div>

@@ -6,18 +6,18 @@ service cloud.firestore {
       return request.auth != null;
     }
 
+    function hasVendorItems() {
+      return request.auth.uid in (resource.data.items.map(item => item.vendorId));
+    }
+
     // Orders collection
     match /orders/{orderId} {
-      allow read: if isAuthenticated() && (
-        // Allow vendors to read orders where they are the vendor
-        request.auth.uid == resource.data.vendorId ||
-        // Allow customers to read their own orders
-        request.auth.uid == resource.data.customerId
-      );
+      // Allow authenticated users to read orders
+      allow read: if isAuthenticated();
       allow create: if isAuthenticated();
       allow update: if isAuthenticated() && (
-        // Allow vendors to update orders where they are the vendor
-        request.auth.uid == resource.data.vendorId ||
+        // Allow vendors to update orders containing their items
+        request.auth.uid in resource.data.items.map(item => item.vendorId) ||
         // Allow customers to update their own orders
         request.auth.uid == resource.data.customerId
       );

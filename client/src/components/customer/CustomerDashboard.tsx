@@ -26,6 +26,19 @@ import { signOut } from 'firebase/auth';
 import { collection, getDocs, query, where, orderBy, Timestamp, serverTimestamp, updateDoc, doc, addDoc, deleteDoc } from 'firebase/firestore';
 import './CustomerDashboard.css';
 
+const API_URL = 'http://localhost:5001';
+
+interface Product {
+  id: string;
+  name: string;
+  price: number;
+  imageUrl: string;
+  description?: string;
+  vendorId: string;
+  vendor?: string;
+  stock?: number;
+}
+
 interface CartItem {
   id: string;
   name: string;
@@ -33,6 +46,7 @@ interface CartItem {
   quantity: number;
   image: string;
   vendor: string;
+  vendorId: string;
 }
 
 interface OrderItem {
@@ -111,16 +125,71 @@ function CustomerDashboard({ cartItems, setCartItems }: CustomerDashboardProps) 
       try {
         setLoadingProducts(true);
         
-        // Get all products from the products collection without status filter
+        // Get all products from the products collection
         const productsRef = collection(db, 'products');
         const querySnapshot = await getDocs(productsRef);
         
-        const productsData = querySnapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data()
-        }));
+        // Get all vendor IDs from the products
+        const vendorIds = new Set(querySnapshot.docs.map(doc => doc.data().vendorId).filter(Boolean));
+        console.log('Found vendor IDs:', Array.from(vendorIds));
         
-        console.log('Fetched products:', productsData); // Debug log
+        // Fetch vendor names
+        const vendorData: { [key: string]: string } = {};
+        for (const vendorId of vendorIds) {
+          try {
+            const vendorQuery = query(collection(db, 'users'), where('uid', '==', vendorId));
+            const vendorSnapshot = await getDocs(vendorQuery);
+            if (!vendorSnapshot.empty) {
+              const vendorDoc = vendorSnapshot.docs[0];
+              vendorData[vendorId] = vendorDoc.data().displayName || 'Unknown Vendor';
+              console.log('Found vendor data:', { 
+                vendorId, 
+                displayName: vendorData[vendorId] 
+              });
+            } else {
+              console.log('No vendor found for ID:', vendorId);
+              vendorData[vendorId] = 'Unknown Vendor';
+            }
+          } catch (err) {
+            console.error('Error fetching vendor data:', err);
+            vendorData[vendorId] = 'Unknown Vendor';
+          }
+        }
+        
+        const productsData = querySnapshot.docs.map(doc => {
+          const data = doc.data();
+          const vendorId = data.vendorId;
+          
+          // Log raw product data
+          console.log('Raw product data:', {
+            id: doc.id,
+            ...data,
+            vendorId: vendorId
+          });
+          
+          if (!vendorId) {
+            console.warn('Product missing vendorId:', doc.id);
+          }
+          
+          const product = {
+            id: doc.id,
+            ...data,
+            vendor: vendorId ? (vendorData[vendorId] || 'Unknown Vendor') : 'Unknown Vendor',
+            vendorId: vendorId // Explicitly include vendorId
+          } as Product;
+          
+          // Log processed product
+          console.log('Processed product:', {
+            id: product.id,
+            name: product.name,
+            vendorId: product.vendorId,
+            vendor: product.vendor
+          });
+          
+          return product;
+        });
+        
+        console.log('Final processed products:', productsData.length);
         setProducts(productsData);
       } catch (error) {
         console.error('Error fetching products:', error);
@@ -135,8 +204,6 @@ function CustomerDashboard({ cartItems, setCartItems }: CustomerDashboardProps) 
 
     fetchProducts();
   }, []);
-
-  // Fetch orders when the orders tab is active
   useEffect(() => {
     const fetchOrders = async () => {
       if (activeTab === 'orders' && user) {
@@ -247,41 +314,80 @@ function CustomerDashboard({ cartItems, setCartItems }: CustomerDashboardProps) 
     return cartItems.reduce((total, item) => total + (item.price * item.quantity), 0);
   };
 
-  const addToCart = (product: any) => {
-    // Check if product already exists in cart
-    const existingItemIndex = cartItems.findIndex(item => item.id === product.id);
+  const addToCart = (product: Product) => {
+    console.log('Adding product to cart:', product); // Debug log
     
-    if (existingItemIndex >= 0) {
-      // If product exists, increase quantity
-      setCartItems(prevItems => 
-        prevItems.map((item, index) => {
-          if (index === existingItemIndex) {
-            return { ...item, quantity: item.quantity + 1 };
-          }
-          return item;
-        })
+    if (!product.id || !product.name || typeof product.price !== 'number' || !product.vendorId) {
+      setNotification({
+        message: 'Invalid product data. Please try again.',
+        type: 'error'
+      });
+      console.error('Missing required product data:', { 
+        id: product.id, 
+        name: product.name, 
+        price: product.price, 
+        vendorId: product.vendorId 
+      });
+      return;
+    }
+
+    const existingItem = cartItems.find(item => item.id === product.id);
+    
+    if (existingItem) {
+      // Check stock if available
+      if (product.stock !== undefined && existingItem.quantity >= product.stock) {
+        setNotification({
+          message: 'Cannot add more items. Stock limit reached.',
+          type: 'error'
+        });
+        return;
+      }
+
+      setCartItems(
+        cartItems.map(item =>
+          item.id === product.id
+            ? { ...item, quantity: item.quantity + 1 }
+            : item
+        )
       );
     } else {
-      // If product doesn't exist, add it to cart
-      const newCartItem = {
+      // Check stock for new items
+      if (product.stock !== undefined && product.stock < 1) {
+        setNotification({
+          message: 'This item is out of stock.',
+          type: 'error'
+        });
+        return;
+      }
+
+      // Log the product data before creating cart item
+      console.log('Creating new cart item from product:', {
+        id: product.id,
+        name: product.name,
+        price: product.price,
+        vendorId: product.vendorId,
+        vendor: product.vendor
+      });
+
+      const newCartItem: CartItem = {
         id: product.id,
         name: product.name,
         price: product.price,
         quantity: 1,
         image: product.imageUrl,
-        vendor: product.vendorName || 'Unknown Vendor'
+        vendor: product.vendor || 'Unknown Vendor',
+        vendorId: product.vendorId // Ensure vendorId is included
       };
-      
-      setCartItems(prevItems => [...prevItems, newCartItem]);
+
+      // Log the new cart item
+      console.log('New cart item created:', newCartItem);
+      setCartItems([...cartItems, newCartItem]);
     }
     
-    // Show notification
-    setNotification({ message: `${product.name} added to cart!`, type: 'success' });
-    
-    // Clear notification after 3 seconds
-    setTimeout(() => {
-      setNotification(null);
-    }, 3000);
+    setNotification({
+      message: 'Item added to cart successfully!',
+      type: 'success'
+    });
   };
 
   const addToWishlist = (product: any) => {
