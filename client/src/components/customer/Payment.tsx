@@ -35,46 +35,30 @@ const Payment: React.FC<PaymentProps> = ({ orderId, amount, onSuccess, onFailure
       setLoading(true);
       setError(null);
 
-      // Check if server is running
-      try {
-        const healthCheck = await fetch(`${API_URL}/health`);
-        if (!healthCheck.ok) {
-          throw new Error('Payment server is not responding');
-        }
-      } catch (error) {
-        throw new Error('Unable to connect to payment server. Please try again later.');
-      }
-
       // Load Razorpay script
-      const res = await loadRazorpay();
-      if (!res) {
-        throw new Error('Failed to load Razorpay SDK');
-      }
-      const response = await fetch(`${API_URL}/create-order`, {
+      await loadRazorpay();
+
+      // Create order on backend
+      const response = await fetch('http://localhost:5001/create-order', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          amount: Math.round(amount * 100),
+          amount: amount * 100, // Convert to paise
           currency: 'INR',
-          receipt: orderId,
+          orderId: orderId,
         }),
       });
 
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to create order');
+        throw new Error('Failed to create order');
       }
 
       const data = await response.json();
 
-      if (!data || !data.id) {
-        throw new Error('Invalid order data received');
-      }
-
       const options = {
-        key: RAZORPAY_KEY_ID,
+        key: 'rzp_test_2GQJQJQJQJQJQJ', // Replace with your Razorpay key
         amount: data.amount,
         currency: data.currency,
         name: 'E-Mart',
@@ -82,8 +66,8 @@ const Payment: React.FC<PaymentProps> = ({ orderId, amount, onSuccess, onFailure
         order_id: data.id,
         handler: async function (response: any) {
           try {
-            // Verify payment
-            const verifyResponse = await fetch(`${API_URL}/verify-payment`, {
+            // Verify payment on backend
+            const verifyResponse = await fetch('http://localhost:5001/verify-payment', {
               method: 'POST',
               headers: {
                 'Content-Type': 'application/json',
@@ -92,6 +76,7 @@ const Payment: React.FC<PaymentProps> = ({ orderId, amount, onSuccess, onFailure
                 razorpay_order_id: response.razorpay_order_id,
                 razorpay_payment_id: response.razorpay_payment_id,
                 razorpay_signature: response.razorpay_signature,
+                orderId: orderId,
               }),
             });
 
@@ -100,53 +85,31 @@ const Payment: React.FC<PaymentProps> = ({ orderId, amount, onSuccess, onFailure
             }
 
             const verifyData = await verifyResponse.json();
-
             if (verifyData.success) {
-              // Update order status in Firestore
-              const orderRef = doc(db, 'orders', orderId);
-              await updateDoc(orderRef, {
-                paymentStatus: 'paid',
-                paymentId: response.razorpay_payment_id,
-                updatedAt: new Date(),
-              });
-
               onSuccess();
             } else {
-              throw new Error('Payment verification failed');
+              onFailure('Payment verification failed');
             }
           } catch (error) {
             console.error('Payment verification error:', error);
-            onFailure(error);
-            setError('Payment verification failed. Please try again.');
-          }
-        },
-        modal: {
-          ondismiss: function() {
-            setError('Payment cancelled. Please try again.');
-            onFailure(new Error('Payment cancelled'));
+            onFailure('Payment verification failed');
           }
         },
         prefill: {
           name: 'Customer Name',
           email: 'customer@example.com',
-          contact: '',
         },
         theme: {
-          color: '#4CAF50',
+          color: '#4F46E5',
         },
       };
 
       const paymentObject = new (window as any).Razorpay(options);
-      paymentObject.on('payment.failed', function (response: any) {
-        setError(`Payment failed: ${response.error.description}`);
-        onFailure(response.error);
-      });
-      
       paymentObject.open();
     } catch (error) {
       console.error('Payment error:', error);
-      setError(error instanceof Error ? error.message : 'Failed to process payment');
-      onFailure(error);
+      setError('Unable to connect to payment server. Please try again later.');
+      onFailure('Payment initialization failed');
     } finally {
       setLoading(false);
     }

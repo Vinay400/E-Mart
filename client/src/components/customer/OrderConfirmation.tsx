@@ -116,7 +116,7 @@ const OrderConfirmation: React.FC = () => {
           <FaExclamationTriangle className="error-icon" />
           <p>{error || 'Order not found'}</p>
           <button 
-            onClick={() => navigate('/dashboard')} 
+            onClick={() => navigate('/customer/dashboard')} 
             className="back-button"
           >
             Back to Dashboard

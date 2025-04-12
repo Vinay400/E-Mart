@@ -3,6 +3,7 @@ import { db } from '../../../firebaseconfig';
 import { collection, query, where, getDocs, deleteDoc, doc, updateDoc } from 'firebase/firestore';
 import { useAuth } from '../../hooks/useAuth';
 import ProductUpload from './ProductUpload';
+import VendorHeader from './VendorHeader';
 
 interface Product {
   id: string;
@@ -95,7 +96,8 @@ function ProductManagement() {
   }
 
   return (
-    <div>
+    <div className="space-y-6">
+      <VendorHeader title="Product Management" />
       <div className="flex justify-between items-center mb-6">
         <h2 className="text-2xl font-bold">Product Management</h2>
         <button

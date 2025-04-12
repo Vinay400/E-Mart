@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../../hooks/useAuth';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
@@ -19,11 +19,27 @@ import {
   FaTruck,
   FaCheckCircle,
   FaClock,
-  FaEdit
+  FaEdit,
+  FaTimesCircle,
+  FaTag
 } from 'react-icons/fa';
 import { auth, db } from '../../../firebaseconfig';
 import { signOut } from 'firebase/auth';
-import { collection, getDocs, query, where, orderBy, Timestamp, serverTimestamp, updateDoc, doc, addDoc, deleteDoc } from 'firebase/firestore';
+import { 
+  collection, 
+  getDocs, 
+  query, 
+  where, 
+  orderBy, 
+  Timestamp, 
+  serverTimestamp, 
+  updateDoc, 
+  doc, 
+  addDoc, 
+  deleteDoc, 
+  onSnapshot,
+  writeBatch
+} from 'firebase/firestore';
 import './CustomerDashboard.css';
 
 const API_URL = 'http://localhost:5001';
@@ -60,22 +76,30 @@ interface OrderItem {
 
 interface Order {
   id: string;
-  items: OrderItem[];
-  shippingInfo: {
-    fullName: string;
-    email: string;
-    phone: string;
-    address: string;
+  customerId: string;
+  customerName: string;
+  items: {
+    productId: string;
+    name: string;
+    quantity: number;
+    price: number;
+    image: string;
+    vendorId: string;
+    vendor: string;
+  }[];
+  totalAmount: number;
+  subtotal: number;
+  shipping: number;
+  status: 'pending' | 'processing' | 'shipped' | 'delivered' | 'cancelled';
+  paymentStatus: string;
+  paymentMethod: 'cod' | 'online';
+  createdAt: Timestamp;
+  shippingAddress: {
+    street: string;
     city: string;
     state: string;
     zipCode: string;
-    additionalNotes?: string;
   };
-  total: number;
-  paymentMethod: string;
-  status: string;
-  createdAt: Timestamp;
-  updatedAt: Timestamp;
 }
 
 interface ShippingAddress {
@@ -87,6 +111,22 @@ interface ShippingAddress {
   zipCode: string;
   phone: string;
   isDefault: boolean;
+}
+
+interface Notification {
+  id: string;
+  message: string;
+  type: 'success' | 'error';
+  duration?: number;
+}
+
+interface SystemNotification {
+  id: string;
+  title: string;
+  message: string;
+  timestamp: Date;
+  isRead: boolean;
+  type: 'order' | 'promotion' | 'system';
 }
 
 interface CustomerDashboardProps {
@@ -101,7 +141,7 @@ function CustomerDashboard({ cartItems, setCartItems }: CustomerDashboardProps) 
   const [searchQuery, setSearchQuery] = useState('');
   const [products, setProducts] = useState<any[]>([]);
   const [loadingProducts, setLoadingProducts] = useState(true);
-  const [notification, setNotification] = useState<{message: string, type: 'success' | 'error'} | null>(null);
+  const [notifications, setNotifications] = useState<Notification[]>([]);
   const [wishlistItems, setWishlistItems] = useState<any[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
   const [loadingOrders, setLoadingOrders] = useState(false);
@@ -118,6 +158,103 @@ function CustomerDashboard({ cartItems, setCartItems }: CustomerDashboardProps) 
     phone: '',
     isDefault: false
   });
+  const [systemNotifications, setSystemNotifications] = useState<SystemNotification[]>([]);
+  const [showNotificationsDropdown, setShowNotificationsDropdown] = useState(false);
+  const notificationsRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (notificationsRef.current && !notificationsRef.current.contains(event.target as Node)) {
+        setShowNotificationsDropdown(false);
+      }
+    }
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!user) return;
+
+    const fetchNotifications = async () => {
+      try {
+        const notificationsRef = collection(db, 'notifications');
+        const q = query(
+          notificationsRef,
+          where('userId', '==', user.uid),
+          orderBy('timestamp', 'desc')
+        );
+
+        const unsubscribe = onSnapshot(q, (snapshot) => {
+          const notificationsData = snapshot.docs.map(doc => ({
+            id: doc.id,
+            ...doc.data(),
+            timestamp: doc.data().timestamp?.toDate() || new Date()
+          })) as SystemNotification[];
+          setSystemNotifications(notificationsData);
+        });
+
+        return unsubscribe;
+      } catch (error) {
+        console.error('Error fetching notifications:', error);
+        showNotification('Failed to load notifications', 'error');
+      }
+    };
+
+    fetchNotifications();
+  }, [user]);
+
+  const markNotificationAsRead = async (notificationId: string) => {
+    try {
+      const notificationRef = doc(db, 'notifications', notificationId);
+      await updateDoc(notificationRef, {
+        isRead: true
+      });
+    } catch (error) {
+      console.error('Error marking notification as read:', error);
+    }
+  };
+
+  const markAllNotificationsAsRead = async () => {
+    try {
+      const batch = writeBatch(db);
+      systemNotifications.forEach(notification => {
+        if (!notification.isRead) {
+          const notificationRef = doc(db, 'notifications', notification.id);
+          batch.update(notificationRef, { isRead: true });
+        }
+      });
+      await batch.commit();
+    } catch (error) {
+      console.error('Error marking all notifications as read:', error);
+    }
+  };
+
+  const getNotificationIcon = (type: SystemNotification['type']) => {
+    switch (type) {
+      case 'order':
+        return <FaBox className="text-indigo-500" />;
+      case 'promotion':
+        return <FaTag className="text-green-500" />;
+      default:
+        return <FaBell className="text-blue-500" />;
+    }
+  };
+
+  const formatNotificationDate = (date: Date) => {
+    const now = new Date();
+    const diff = now.getTime() - date.getTime();
+    const minutes = Math.floor(diff / 60000);
+    const hours = Math.floor(minutes / 60);
+    const days = Math.floor(hours / 24);
+
+    if (minutes < 60) return `${minutes}m ago`;
+    if (hours < 24) return `${hours}h ago`;
+    if (days === 1) return 'Yesterday';
+    return date.toLocaleDateString();
+  };
 
   // Fetch products from Firestore
   useEffect(() => {
@@ -193,10 +330,7 @@ function CustomerDashboard({ cartItems, setCartItems }: CustomerDashboardProps) 
         setProducts(productsData);
       } catch (error) {
         console.error('Error fetching products:', error);
-        setNotification({ 
-          message: 'Failed to load products. Please try again later.', 
-          type: 'error' 
-        });
+        showNotification('Failed to load products. Please try again later.', 'error');
       } finally {
         setLoadingProducts(false);
       }
@@ -204,46 +338,37 @@ function CustomerDashboard({ cartItems, setCartItems }: CustomerDashboardProps) 
 
     fetchProducts();
   }, []);
-  useEffect(() => {
-    const fetchOrders = async () => {
-      if (activeTab === 'orders' && user) {
-        setLoadingOrders(true);
-        try {
-          const ordersQuery = query(
-            collection(db, 'orders'),
-            where('userId', '==', user.uid),
-            orderBy('createdAt', 'desc')
-          );
-          
-          const querySnapshot = await getDocs(ordersQuery);
-          const ordersData = querySnapshot.docs.map(doc => ({
-            id: doc.id,
-            ...doc.data()
-          })) as Order[];
-          
-          setOrders(ordersData);
-        } catch (error: any) {
-          console.error('Error fetching orders:', error);
-          // Check if the error is related to missing index
-          if (error.code === 'failed-precondition' && error.message.includes('index')) {
-            setNotification({ 
-              message: 'Orders are being indexed. Please try again in a few minutes.', 
-              type: 'error' 
-            });
-          } else {
-            setNotification({ 
-              message: 'Failed to load order history. Please try again later.', 
-              type: 'error' 
-            });
-          }
-        } finally {
-          setLoadingOrders(false);
-        }
-      }
-    };
 
-    fetchOrders();
-  }, [activeTab, user]);
+  useEffect(() => {
+    if (!user) return;
+
+    const ordersRef = collection(db, 'orders');
+    const q = query(ordersRef, where('customerId', '==', user.uid));
+
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const ordersData = snapshot.docs.map(doc => {
+        const data = doc.data();
+        return {
+          id: doc.id,
+          customerId: data.customerId,
+          customerName: data.customerName,
+          items: data.items || [],
+          totalAmount: data.totalAmount,
+          subtotal: data.subtotal,
+          shipping: data.shipping,
+          status: data.status,
+          paymentStatus: data.paymentStatus,
+          paymentMethod: data.paymentMethod,
+          createdAt: data.createdAt,
+          shippingAddress: data.shippingAddress
+        } as Order;
+      });
+      setOrders(ordersData);
+      setLoadingOrders(false);
+    });
+
+    return () => unsubscribe();
+  }, [user]);
 
   // Fetch addresses when the addresses tab is active
   useEffect(() => {
@@ -266,15 +391,9 @@ function CustomerDashboard({ cartItems, setCartItems }: CustomerDashboardProps) 
         } catch (error: any) {
           console.error('Error fetching addresses:', error);
           if (error.code === 'permission-denied') {
-            setNotification({ 
-              message: 'Permission denied. Please check your Firestore security rules.', 
-              type: 'error' 
-            });
+            showNotification('Permission denied. Please check your Firestore security rules.', 'error');
           } else {
-            setNotification({ 
-              message: 'Failed to load addresses. Please try again later.', 
-              type: 'error' 
-            });
+            showNotification('Failed to load addresses. Please try again later.', 'error');
           }
         } finally {
           setLoadingAddresses(false);
@@ -314,14 +433,28 @@ function CustomerDashboard({ cartItems, setCartItems }: CustomerDashboardProps) 
     return cartItems.reduce((total, item) => total + (item.price * item.quantity), 0);
   };
 
+  const showNotification = (message: string, type: 'success' | 'error', duration = 3000) => {
+    const id = Math.random().toString(36).substring(7);
+    const newNotification: Notification = {
+      id,
+      message,
+      type,
+      duration
+    };
+    
+    setNotifications(prev => [...prev, newNotification]);
+
+    // Auto dismiss after duration
+    setTimeout(() => {
+      setNotifications(prev => prev.filter(notification => notification.id !== id));
+    }, duration);
+  };
+
   const addToCart = (product: Product) => {
-    console.log('Adding product to cart:', product); // Debug log
+    console.log('Adding product to cart:', product);
     
     if (!product.id || !product.name || typeof product.price !== 'number' || !product.vendorId) {
-      setNotification({
-        message: 'Invalid product data. Please try again.',
-        type: 'error'
-      });
+      showNotification('Invalid product data. Please try again.', 'error');
       console.error('Missing required product data:', { 
         id: product.id, 
         name: product.name, 
@@ -334,12 +467,8 @@ function CustomerDashboard({ cartItems, setCartItems }: CustomerDashboardProps) 
     const existingItem = cartItems.find(item => item.id === product.id);
     
     if (existingItem) {
-      // Check stock if available
       if (product.stock !== undefined && existingItem.quantity >= product.stock) {
-        setNotification({
-          message: 'Cannot add more items. Stock limit reached.',
-          type: 'error'
-        });
+        showNotification('Cannot add more items. Stock limit reached.', 'error');
         return;
       }
 
@@ -351,23 +480,10 @@ function CustomerDashboard({ cartItems, setCartItems }: CustomerDashboardProps) 
         )
       );
     } else {
-      // Check stock for new items
       if (product.stock !== undefined && product.stock < 1) {
-        setNotification({
-          message: 'This item is out of stock.',
-          type: 'error'
-        });
+        showNotification('This item is out of stock.', 'error');
         return;
       }
-
-      // Log the product data before creating cart item
-      console.log('Creating new cart item from product:', {
-        id: product.id,
-        name: product.name,
-        price: product.price,
-        vendorId: product.vendorId,
-        vendor: product.vendor
-      });
 
       const newCartItem: CartItem = {
         id: product.id,
@@ -376,37 +492,25 @@ function CustomerDashboard({ cartItems, setCartItems }: CustomerDashboardProps) 
         quantity: 1,
         image: product.imageUrl,
         vendor: product.vendor || 'Unknown Vendor',
-        vendorId: product.vendorId // Ensure vendorId is included
+        vendorId: product.vendorId
       };
 
-      // Log the new cart item
-      console.log('New cart item created:', newCartItem);
       setCartItems([...cartItems, newCartItem]);
     }
     
-    setNotification({
-      message: 'Item added to cart successfully!',
-      type: 'success'
-    });
+    showNotification('Item added to cart successfully!', 'success');
   };
 
   const addToWishlist = (product: any) => {
     const isInWishlist = wishlistItems.some(item => item.id === product.id);
     
     if (isInWishlist) {
-      // Remove from wishlist
       setWishlistItems(prevItems => prevItems.filter(item => item.id !== product.id));
-      setNotification({ message: `${product.name} removed from wishlist!`, type: 'success' });
+      showNotification(`${product.name} removed from wishlist!`, 'success');
     } else {
-      // Add to wishlist
       setWishlistItems(prevItems => [...prevItems, product]);
-      setNotification({ message: `${product.name} added to wishlist!`, type: 'success' });
+      showNotification(`${product.name} added to wishlist!`, 'success');
     }
-    
-    // Clear notification after 3 seconds
-    setTimeout(() => {
-      setNotification(null);
-    }, 3000);
   };
 
   const filteredProducts = products.filter(product => 
@@ -416,7 +520,7 @@ function CustomerDashboard({ cartItems, setCartItems }: CustomerDashboardProps) 
 
   const handleCheckout = () => {
     if (cartItems.length === 0) {
-      setNotification({ message: 'Your cart is empty', type: 'error' });
+      showNotification('Your cart is empty', 'error');
       return;
     }
     navigate('/checkout', { 
@@ -472,17 +576,11 @@ function CustomerDashboard({ cartItems, setCartItems }: CustomerDashboardProps) 
       if (editingAddress) {
         // Update existing address
         await updateDoc(doc(db, 'addresses', editingAddress.id), addressData);
-        setNotification({ 
-          message: 'Address updated successfully', 
-          type: 'success' 
-        });
+        showNotification('Address updated successfully', 'success');
       } else {
         // Add new address
         await addDoc(collection(db, 'addresses'), addressData);
-        setNotification({ 
-          message: 'Address added successfully', 
-          type: 'success' 
-        });
+        showNotification('Address added successfully', 'success');
       }
 
       // Reset form and refresh addresses
@@ -512,15 +610,9 @@ function CustomerDashboard({ cartItems, setCartItems }: CustomerDashboardProps) 
     } catch (error: any) {
       console.error('Error saving address:', error);
       if (error.code === 'permission-denied') {
-        setNotification({ 
-          message: 'Permission denied. Please check your Firestore security rules.', 
-          type: 'error' 
-        });
+        showNotification('Permission denied. Please check your Firestore security rules.', 'error');
       } else {
-        setNotification({ 
-          message: 'Failed to save address. Please try again later.', 
-          type: 'error' 
-        });
+        showNotification('Failed to save address. Please try again later.', 'error');
       }
     }
   };
@@ -544,10 +636,7 @@ function CustomerDashboard({ cartItems, setCartItems }: CustomerDashboardProps) 
 
     try {
       await deleteDoc(doc(db, 'addresses', addressId));
-      setNotification({ 
-        message: 'Address deleted successfully', 
-        type: 'success' 
-      });
+      showNotification('Address deleted successfully', 'success');
       
       // Refresh addresses list
       const addressesQuery = query(
@@ -563,15 +652,9 @@ function CustomerDashboard({ cartItems, setCartItems }: CustomerDashboardProps) 
     } catch (error: any) {
       console.error('Error deleting address:', error);
       if (error.code === 'permission-denied') {
-        setNotification({ 
-          message: 'Permission denied. Please check your Firestore security rules.', 
-          type: 'error' 
-        });
+        showNotification('Permission denied. Please check your Firestore security rules.', 'error');
       } else {
-        setNotification({ 
-          message: 'Failed to delete address. Please try again later.', 
-          type: 'error' 
-        });
+        showNotification('Failed to delete address. Please try again later.', 'error');
       }
     }
   };
@@ -591,6 +674,32 @@ function CustomerDashboard({ cartItems, setCartItems }: CustomerDashboardProps) 
 
   return (
     <div className="min-h-screen dashboard-container">
+      {/* Notification Stack */}
+      <div className="fixed top-4 right-4 z-50 space-y-2">
+        {notifications.map((notification) => (
+          <motion.div
+            key={notification.id}
+            initial={{ opacity: 0, y: -20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -20 }}
+            className={`p-4 rounded-lg shadow-lg max-w-md ${
+              notification.type === 'success' 
+                ? 'bg-green-100 text-green-800 border border-green-200' 
+                : 'bg-red-100 text-red-800 border border-red-200'
+            }`}
+          >
+            <div className="flex items-center">
+              {notification.type === 'success' ? (
+                <FaCheckCircle className="w-5 h-5 mr-3" />
+              ) : (
+                <FaTimesCircle className="w-5 h-5 mr-3" />
+              )}
+              <p className="text-sm font-medium">{notification.message}</p>
+            </div>
+          </motion.div>
+        ))}
+      </div>
+
       <div className="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
         <motion.div 
           initial={{ opacity: 0, y: -20 }}
@@ -607,14 +716,74 @@ function CustomerDashboard({ cartItems, setCartItems }: CustomerDashboardProps) 
               <p className="text-gray-600">Discover amazing products and deals</p>
             </div>
             <div className="flex items-center gap-4">
-              <motion.button
-                whileHover={{ scale: 1.05 }}
-                whileTap={{ scale: 0.95 }}
-                className="relative p-2 text-gray-600 hover:text-indigo-600 transition-colors"
-              >
-                <FaBell className="text-xl" />
-                <span className="absolute top-0 right-0 w-2 h-2 bg-red-500 rounded-full"></span>
-              </motion.button>
+              <div className="relative" ref={notificationsRef}>
+                <motion.button
+                  whileHover={{ scale: 1.05 }}
+                  whileTap={{ scale: 0.95 }}
+                  onClick={() => setShowNotificationsDropdown(!showNotificationsDropdown)}
+                  className="relative p-2 text-gray-600 hover:text-indigo-600 transition-colors"
+                >
+                  <FaBell className="text-xl" />
+                  {systemNotifications.some(n => !n.isRead) && (
+                    <span className="absolute top-0 right-0 w-2 h-2 bg-red-500 rounded-full"></span>
+                  )}
+                </motion.button>
+
+                {showNotificationsDropdown && (
+                  <div className="absolute right-0 mt-2 w-80 bg-white rounded-lg shadow-lg py-2 z-50">
+                    <div className="px-4 py-2 border-b border-gray-200">
+                      <div className="flex justify-between items-center">
+                        <h3 className="text-lg font-semibold text-gray-900">Notifications</h3>
+                        {systemNotifications.some(n => !n.isRead) && (
+                          <button
+                            onClick={markAllNotificationsAsRead}
+                            className="text-sm text-indigo-600 hover:text-indigo-800"
+                          >
+                            Mark all as read
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                    <div className="max-h-96 overflow-y-auto">
+                      {systemNotifications.length === 0 ? (
+                        <div className="px-4 py-6 text-center text-gray-500">
+                          No notifications
+                        </div>
+                      ) : (
+                        systemNotifications.map((notification) => (
+                          <div
+                            key={notification.id}
+                            className={`px-4 py-3 hover:bg-gray-50 cursor-pointer ${
+                              !notification.isRead ? 'bg-blue-50' : ''
+                            }`}
+                            onClick={() => markNotificationAsRead(notification.id)}
+                          >
+                            <div className="flex items-start">
+                              <div className="flex-shrink-0 pt-1">
+                                {getNotificationIcon(notification.type)}
+                              </div>
+                              <div className="ml-3 flex-1">
+                                <p className="text-sm font-medium text-gray-900">
+                                  {notification.title}
+                                </p>
+                                <p className="text-sm text-gray-500">{notification.message}</p>
+                                <p className="text-xs text-gray-400 mt-1">
+                                  {formatNotificationDate(notification.timestamp)}
+                                </p>
+                              </div>
+                              {!notification.isRead && (
+                                <div className="ml-2 flex-shrink-0">
+                                  <span className="inline-block w-2 h-2 bg-blue-500 rounded-full"></span>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
               <motion.button
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
@@ -642,16 +811,23 @@ function CustomerDashboard({ cartItems, setCartItems }: CustomerDashboardProps) 
           </div>
 
           {/* Notification */}
-          {notification && (
+          {notifications.length > 0 && (
             <motion.div 
               initial={{ opacity: 0, y: -20 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0 }}
               className={`mb-4 p-4 rounded-lg ${
-                notification.type === 'success' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
+                notifications[notifications.length - 1].type === 'success' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
               }`}
             >
-              {notification.message}
+              <div className="flex items-center">
+                {notifications[notifications.length - 1].type === 'success' ? (
+                  <FaCheckCircle className="w-5 h-5 mr-3" />
+                ) : (
+                  <FaTimesCircle className="w-5 h-5 mr-3" />
+                )}
+                <p className="text-sm font-medium">{notifications[notifications.length - 1].message}</p>
+              </div>
             </motion.div>
           )}
 
@@ -1057,12 +1233,12 @@ function CustomerDashboard({ cartItems, setCartItems }: CustomerDashboardProps) 
                                 <div>
                                   <p className="text-sm text-gray-500">Shipping Address:</p>
                                   <p className="text-sm text-gray-900">
-                                    {order.shippingInfo.address}, {order.shippingInfo.city}, {order.shippingInfo.state} {order.shippingInfo.zipCode}
+                                    {order.shippingAddress.street}, {order.shippingAddress.city}, {order.shippingAddress.state} {order.shippingAddress.zipCode}
                                   </p>
                                 </div>
                                 <div className="text-right">
                                   <p className="text-sm text-gray-500">Total Amount</p>
-                                  <p className="text-lg font-semibold text-gray-900">${order.total.toFixed(2)}</p>
+                                  <p className="text-lg font-semibold text-gray-900">${order.totalAmount.toFixed(2)}</p>
                                 </div>
                               </div>
                             </div>

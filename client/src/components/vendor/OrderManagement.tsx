@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { db } from '../../../firebaseconfig';
-import { collection, query, onSnapshot, updateDoc, doc } from 'firebase/firestore';
+import { collection, query, onSnapshot, updateDoc, doc, serverTimestamp } from 'firebase/firestore';
 import { useAuth } from '../../hooks/useAuth';
 import { motion } from 'framer-motion';
 import { FaBox, FaTruck, FaCheckCircle, FaTimesCircle, FaClock } from 'react-icons/fa';
+import VendorHeader from './VendorHeader';
 
 interface Order {
   id: string;
@@ -138,7 +139,10 @@ function OrderManagement() {
   const handleUpdateOrderStatus = async (orderId: string, newStatus: Order['status']) => {
     try {
       const orderRef = doc(db, 'orders', orderId);
-      await updateDoc(orderRef, { status: newStatus });
+      await updateDoc(orderRef, { 
+        status: newStatus,
+        updatedAt: serverTimestamp()
+      });
     } catch (err) {
       console.error('Error updating order status:', err);
       setError('Failed to update order status. Please try again.');
@@ -197,6 +201,7 @@ function OrderManagement() {
 
   return (
     <div className="space-y-6">
+      <VendorHeader title="Order Management" />
       <div className="flex justify-between items-center">
         <h2 className="text-2xl font-bold text-gray-800">Order Management</h2>
         <div className="text-sm text-gray-500">
@@ -215,7 +220,7 @@ function OrderManagement() {
             <div className="flex justify-between items-start mb-4">
               <div>
                 <h3 className="text-lg font-semibold text-gray-800">
-                  Order #{order.id.slice(0, 8)}
+                  Order #{order.id.slice(-6)}
                 </h3>
                 <p className="text-sm text-gray-500">
                   Customer: {order.customerName}
