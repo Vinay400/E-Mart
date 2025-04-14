@@ -58,7 +58,7 @@ const Payment: React.FC<PaymentProps> = ({ orderId, amount, onSuccess, onFailure
       const data = await response.json();
 
       const options = {
-        key: 'rzp_test_2GQJQJQJQJQJQJ', // Replace with your Razorpay key
+        key: RAZORPAY_KEY_ID,
         amount: data.amount,
         currency: data.currency,
         name: 'E-Mart',
