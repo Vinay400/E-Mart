@@ -108,7 +108,7 @@ const Payment: React.FC<PaymentProps> = ({ orderId, amount, onSuccess, onFailure
       paymentObject.open();
     } catch (error) {
       console.error('Payment error:', error);
-      setError('Unable to connect to payment server. Please try again later.');
+          setError('Unable to connect to payment server. Please check your internet connection and try again later.');
       onFailure('Payment initialization failed');
     } finally {
       setLoading(false);
