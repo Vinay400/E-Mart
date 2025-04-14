@@ -6,44 +6,119 @@ service cloud.firestore {
       return request.auth != null;
     }
 
+    function isAdmin() {
+      return isAuthenticated() && 
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+
+    function isVendor() {
+      return isAuthenticated() && 
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'vendor';
+    }
+
+    function isCustomer() {
+      return isAuthenticated() && 
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'customer';
+    }
+
+    function isOwner(vendorId) {
+      return request.auth.uid == vendorId;
+    }
+
+    function hasVendorAccess(items) {
+      return items != null && 
+        exists(/databases/$(database)/documents/products/$(items[0].productId)) &&
+        get(/databases/$(database)/documents/products/$(items[0].productId)).data.vendorId == request.auth.uid;
+    }
+
     function hasVendorItems() {
-      return request.auth.uid in (resource.data.items.map(item => item.vendorId));
+      return request.auth != null && resource.data.items.hasAny([{'vendorId': request.auth.uid}]);
+    }
+
+    // Users collection
+    match /users/{userId} {
+      allow read: if isAuthenticated() && (
+        request.auth.uid == userId || 
+        isAdmin()
+      );
+      allow create: if isAuthenticated() && 
+        request.auth.uid == userId;
+      allow update: if isAuthenticated() && (
+        request.auth.uid == userId || 
+        isAdmin()
+      );
+      allow delete: if isAdmin();
+    }
+
+    // Vendors collection
+    match /vendors/{vendorId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && 
+        request.auth.uid == vendorId;
+      allow update: if isAuthenticated() && (
+        request.auth.uid == vendorId || 
+        isAdmin()
+      );
+      allow delete: if isAdmin();
+    }
+
+    // Products collection
+    match /products/{productId} {
+      allow read: if true;
+      allow create: if isAuthenticated() && isVendor();
+      allow update: if isAuthenticated() && (
+        isVendor() && 
+        request.auth.uid == resource.data.vendorId ||
+        isAdmin()
+      );
+      allow delete: if isAuthenticated() && (
+        isVendor() && 
+        request.auth.uid == resource.data.vendorId ||
+        isAdmin()
+      );
     }
 
     // Orders collection
     match /orders/{orderId} {
-      // Allow authenticated users to read orders
-      allow read: if isAuthenticated();
-      allow create: if isAuthenticated();
-      allow update: if isAuthenticated() && (
-        // Allow vendors to update orders containing their items
-        request.auth.uid in resource.data.items.map(item => item.vendorId) ||
-        // Allow customers to update their own orders
-        request.auth.uid == resource.data.customerId
+      allow read: if isAuthenticated() && (
+        isAdmin() ||
+        isCustomer() && resource.data.customerId == request.auth.uid ||
+        isVendor() && hasVendorItems()
       );
+      allow create: if isAuthenticated() && isCustomer();
+      allow update: if isAuthenticated() && (
+        isAdmin() ||
+        isCustomer() && resource.data.customerId == request.auth.uid ||
+        isVendor() && hasVendorItems()
+      );
+      allow delete: if isAdmin();
     }
     
-    // Allow authenticated users to read and write their own addresses
+    // Addresses collection
     match /addresses/{addressId} {
-      allow read: if isAuthenticated() && request.auth.uid == resource.data.userId;
-      allow create: if isAuthenticated() && request.auth.uid == request.resource.data.userId;
-      allow update, delete: if isAuthenticated() && request.auth.uid == resource.data.userId;
+      allow read: if isAuthenticated() && 
+        request.auth.uid == resource.data.userId;
+      allow create: if isAuthenticated() && 
+        request.auth.uid == request.resource.data.userId;
+      allow update, delete: if isAuthenticated() && 
+        request.auth.uid == resource.data.userId;
     }
-    
-    // Products collection
-    match /products/{productId} {
-      allow read: if true;
-      allow write: if isAuthenticated();
-    }
-    
-    // Users collection
-    match /users/{userId} {
-      allow read, write: if isAuthenticated() && request.auth.uid == userId;
-    }
-    
-    // Default deny
-    match /{document=**} {
-      allow read, write: if false;
+
+    // Earnings collection
+    match /earnings/{earningId} {
+      allow read: if isAuthenticated() && (
+        isAdmin() ||
+        isVendor() && resource.data.vendorId == request.auth.uid
+      );
+      allow create: if isAuthenticated() && (
+        isAdmin() ||
+        isVendor() && request.resource.data.vendorId == request.auth.uid
+      );
+      allow update: if isAuthenticated() && (
+        isAdmin() ||
+        isVendor() && resource.data.vendorId == request.auth.uid
+      );
+      allow delete: if isAdmin();
     }
   }
 }

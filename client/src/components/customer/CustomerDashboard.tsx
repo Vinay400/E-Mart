@@ -41,66 +41,9 @@ import {
   writeBatch
 } from 'firebase/firestore';
 import './CustomerDashboard.css';
+import { CartItem, Product, Order } from '../../types';
 
 const API_URL = 'http://localhost:5001';
-
-interface Product {
-  id: string;
-  name: string;
-  price: number;
-  imageUrl: string;
-  description?: string;
-  vendorId: string;
-  vendor?: string;
-  stock?: number;
-}
-
-interface CartItem {
-  id: string;
-  name: string;
-  price: number;
-  quantity: number;
-  image: string;
-  vendor: string;
-  vendorId: string;
-}
-
-interface OrderItem {
-  id: string;
-  name: string;
-  price: number;
-  quantity: number;
-  image: string;
-  vendor: string;
-}
-
-interface Order {
-  id: string;
-  customerId: string;
-  customerName: string;
-  items: {
-    productId: string;
-    name: string;
-    quantity: number;
-    price: number;
-    image: string;
-    vendorId: string;
-    vendor: string;
-  }[];
-  totalAmount: number;
-  subtotal: number;
-  shipping: number;
-  status: 'pending' | 'processing' | 'shipped' | 'delivered' | 'cancelled';
-  paymentStatus: string;
-  paymentMethod: 'cod' | 'online';
-  createdAt: Timestamp;
-  shippingAddress: {
-    street: string;
-    city: string;
-    state: string;
-    zipCode: string;
-  };
-}
 
 interface ShippingAddress {
   id: string;
@@ -414,19 +357,18 @@ function CustomerDashboard({ cartItems, setCartItems }: CustomerDashboardProps) 
   };
 
   const updateQuantity = (id: string, change: number) => {
-    setCartItems(prevItems => 
-      prevItems.map(item => {
-        if (item.id === id) {
-          const newQuantity = Math.max(1, item.quantity + change);
-          return { ...item, quantity: newQuantity };
-        }
-        return item;
-      })
+    setCartItems(prevItems =>
+      prevItems.map(item =>
+        item.id === id
+          ? { ...item, quantity: Math.max(1, item.quantity + change) }
+          : item
+      )
     );
   };
 
   const removeFromCart = (id: string) => {
     setCartItems(prevItems => prevItems.filter(item => item.id !== id));
+    showNotification('Item removed from cart', 'success');
   };
 
   const calculateTotal = () => {
@@ -451,54 +393,30 @@ function CustomerDashboard({ cartItems, setCartItems }: CustomerDashboardProps) 
   };
 
   const addToCart = (product: Product) => {
-    console.log('Adding product to cart:', product);
-    
-    if (!product.id || !product.name || typeof product.price !== 'number' || !product.vendorId) {
-      showNotification('Invalid product data. Please try again.', 'error');
-      console.error('Missing required product data:', { 
-        id: product.id, 
-        name: product.name, 
-        price: product.price, 
-        vendorId: product.vendorId 
-      });
-      return;
-    }
-
     const existingItem = cartItems.find(item => item.id === product.id);
     
     if (existingItem) {
-      if (product.stock !== undefined && existingItem.quantity >= product.stock) {
-        showNotification('Cannot add more items. Stock limit reached.', 'error');
-        return;
-      }
-
-      setCartItems(
-        cartItems.map(item =>
-          item.id === product.id
-            ? { ...item, quantity: item.quantity + 1 }
-            : item
-        )
+      const updatedItems = cartItems.map(item =>
+        item.id === product.id
+          ? { ...item, quantity: item.quantity + 1 }
+          : item
       );
+      setCartItems(updatedItems);
     } else {
-      if (product.stock !== undefined && product.stock < 1) {
-        showNotification('This item is out of stock.', 'error');
-        return;
-      }
-
-      const newCartItem: CartItem = {
+      const newItem: CartItem = {
         id: product.id,
         name: product.name,
         price: product.price,
         quantity: 1,
         image: product.imageUrl,
         vendor: product.vendor || 'Unknown Vendor',
-        vendorId: product.vendorId
+        vendorId: product.vendorId,
+        productId: product.id
       };
-
-      setCartItems([...cartItems, newCartItem]);
+      setCartItems([...cartItems, newItem]);
     }
     
-    showNotification('Item added to cart successfully!', 'success');
+    showNotification('Item added to cart', 'success');
   };
 
   const addToWishlist = (product: any) => {

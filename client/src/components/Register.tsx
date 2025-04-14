@@ -5,11 +5,22 @@ import { useNavigate } from 'react-router-dom';
 import { setDoc, doc } from 'firebase/firestore';
 import { UserRole } from '../types/auth';
 
+interface BusinessDetails {
+  businessName: string;
+  phone: string;
+  address: string;
+}
+
 function Register() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [role, setRole] = useState<UserRole>('customer');
   const [error, setError] = useState('');
+  const [businessDetails, setBusinessDetails] = useState<BusinessDetails>({
+    businessName: '',
+    phone: '',
+    address: ''
+  });
   const navigate = useNavigate();
 
   const validatePassword = (password: string) => {
@@ -29,15 +40,46 @@ function Register() {
       return;
     }
 
+    // Validate business details if registering as vendor
+    if (role === 'vendor') {
+      if (!businessDetails.businessName.trim()) {
+        setError('Business name is required for vendors');
+        return;
+      }
+      if (!businessDetails.phone.trim()) {
+        setError('Phone number is required for vendors');
+        return;
+      }
+      if (!businessDetails.address.trim()) {
+        setError('Business address is required for vendors');
+        return;
+      }
+    }
+
     try {
       const userCredential = await createUserWithEmailAndPassword(auth, email, password);
       const user = userCredential.user;
 
+      // Create user document
       await setDoc(doc(db, 'users', user.uid), {
         email: user.email,
         role,
         createdAt: new Date(),
+        status: role === 'vendor' ? 'pending' : 'active'
       });
+
+      // If registering as vendor, create vendor document
+      if (role === 'vendor') {
+        await setDoc(doc(db, 'vendors', user.uid), {
+          email: user.email,
+          businessName: businessDetails.businessName,
+          phone: businessDetails.phone,
+          address: businessDetails.address,
+          status: 'pending',
+          createdAt: new Date(),
+          productsCount: 0
+        });
+      }
 
       navigate('/signin');
     } catch (error: any) {
@@ -95,6 +137,55 @@ function Register() {
               <option value="admin">Admin</option>
             </select>
           </div>
+
+          {/* Business Details Section (shown only for vendors) */}
+          {role === 'vendor' && (
+            <div className="space-y-4 border-t pt-4 mt-4">
+              <h3 className="text-lg font-medium text-gray-900">Business Details</h3>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Business Name</label>
+                <input
+                  type="text"
+                  value={businessDetails.businessName}
+                  onChange={(e) => setBusinessDetails(prev => ({
+                    ...prev,
+                    businessName: e.target.value
+                  }))}
+                  className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Phone Number</label>
+                <input
+                  type="tel"
+                  value={businessDetails.phone}
+                  onChange={(e) => setBusinessDetails(prev => ({
+                    ...prev,
+                    phone: e.target.value
+                  }))}
+                  className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Business Address</label>
+                <textarea
+                  value={businessDetails.address}
+                  onChange={(e) => setBusinessDetails(prev => ({
+                    ...prev,
+                    address: e.target.value
+                  }))}
+                  rows={3}
+                  className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2"
+                  required
+                />
+              </div>
+            </div>
+          )}
           
           <button
             type="submit"

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { db } from '../../../firebaseconfig';
-import { collection, query, onSnapshot, updateDoc, doc, serverTimestamp } from 'firebase/firestore';
+import { collection, query, onSnapshot, updateDoc, doc, serverTimestamp, where } from 'firebase/firestore';
 import { useAuth } from '../../hooks/useAuth';
 import { motion } from 'framer-motion';
 import { FaBox, FaTruck, FaCheckCircle, FaTimesCircle, FaClock } from 'react-icons/fa';
@@ -52,9 +52,12 @@ function OrderManagement() {
     let unsubscribe: () => void;
 
     try {
-      // Create a query for all orders
+      // Query orders where any item has this vendor's ID
       const ordersRef = collection(db, 'orders');
-      const ordersQuery = query(ordersRef);
+      const ordersQuery = query(
+        ordersRef,
+        where('vendorIds', 'array-contains', user.uid)
+      );
 
       unsubscribe = onSnapshot(
         ordersQuery,
@@ -73,42 +76,12 @@ function OrderManagement() {
               } as Order;
             });
 
-            // Filter orders that have items from this vendor
-            const vendorOrders = ordersData.filter(order => {
-              // Check if the order has any items from this vendor
-              const hasVendorItems = order.items?.some(item => {
-                // Log the comparison details
-                console.log('Checking item in order:', {
-                  orderId: order.id,
-                  itemId: item.productId,
-                  itemName: item.name,
-                  itemVendorId: item.vendorId,
-                  currentVendorId: user.uid
-                });
-                
-                // Strict equality comparison
-                const isVendorItem = item.vendorId === user.uid;
-                if (isVendorItem) {
-                  console.log('Found matching vendor item:', {
-                    orderId: order.id,
-                    item: item
-                  });
-                }
-                return isVendorItem;
-              });
+            // Sort orders by date client-side
+            const sortedOrders = ordersData.sort((a, b) => 
+              b.createdAt.getTime() - a.createdAt.getTime()
+            );
 
-              if (!hasVendorItems) {
-                console.log('Order', order.id, 'has no items from vendor', user.uid);
-              } else {
-                console.log('Order', order.id, 'has items from vendor', user.uid);
-              }
-
-              return hasVendorItems;
-            });
-
-            console.log('Final filtered vendor orders:', vendorOrders);
-
-            setOrders(vendorOrders.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime()));
+            setOrders(sortedOrders);
             setLoading(false);
             setError('');
           } catch (err) {

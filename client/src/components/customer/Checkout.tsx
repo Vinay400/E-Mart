@@ -90,10 +90,14 @@ const Checkout: React.FC<CheckoutProps> = ({ cartItems, total, onOrderComplete }
         vendor: item.vendor
       }));
 
+      // Extract unique vendor IDs from items
+      const vendorIds = [...new Set(orderItems.map(item => item.vendorId))];
+
       const orderData = {
         customerId: user.uid,
         customerName: formData.fullName,
         items: orderItems,
+        vendorIds, // Add this field for efficient querying
         shippingAddress: {
           street: formData.address,
           city: formData.city,

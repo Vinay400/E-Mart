@@ -6,138 +6,93 @@ import Register from './components/Register';
 import ContactUs from './components/ContactUs';
 import VendorDashboard from './components/vendor/VendorDashboard';
 import CustomerDashboard from './components/customer/CustomerDashboard';
+import AdminDashboard from './components/admin/AdminDashboard';
 import Checkout from './components/customer/Checkout';
 import OrderConfirmation from './components/customer/OrderConfirmation';
 import { auth, db } from '../firebaseconfig';
 import { useAuthState } from 'react-firebase-hooks/auth';
 import { doc, getDoc } from 'firebase/firestore';
+import { CartItem } from './types';
 
-interface CartItem {
-  id: string;
-  name: string;
-  price: number;
-  quantity: number;
-  image: string;
-  vendor: string;
-  vendorId: string;
-  productId: string;
-}
-
-function AppRoutes() {
-  const [user, loading] = useAuthState(auth);
-  const [cartItems, setCartItems] = useState<CartItem[]>([]);
+// Separate component for routes to use hooks within Router context
+const AppRoutes = () => {
+  const [user] = useAuthState(auth);
   const [userRole, setUserRole] = useState<string | null>(null);
-  const [roleLoading, setRoleLoading] = useState(true);
+  const [cartItems, setCartItems] = useState<CartItem[]>([]);
   const location = useLocation();
 
   useEffect(() => {
-    const checkUserRole = async () => {
+    const fetchUserRole = async () => {
       if (user) {
-        try {
-          const userDoc = await getDoc(doc(db, 'users', user.uid));
-          if (userDoc.exists()) {
-            setUserRole(userDoc.data().role);
-          }
-        } catch (error) {
-          console.error('Error fetching user role:', error);
+        const userDoc = await getDoc(doc(db, 'users', user.uid));
+        if (userDoc.exists()) {
+          setUserRole(userDoc.data().role);
         }
-        setRoleLoading(false);
-      } else if (!loading) {
-        setRoleLoading(false);
+      } else {
+        setUserRole(null);
       }
     };
 
-    checkUserRole();
-  }, [user, loading]);
+    fetchUserRole();
+  }, [user]);
 
-  const handleOrderComplete = () => {
-    setCartItems([]);
-  };
-
-  // Add debugging logs
-  console.log('Current user:', user);
-  console.log('Current location:', location.pathname);
-  console.log('User role:', userRole);
-  console.log('Cart items:', cartItems);
-
-  if (loading || roleLoading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600"></div>
-      </div>
-    );
-  }
-
-  // Get cart items from location state if available
-  const locationCartItems = location.state?.cartItems || cartItems;
-  const locationTotal = location.state?.total || cartItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
-
-  // Redirect authenticated users to their dashboard if they're on the main page
-  if (user && location.pathname === '/' && userRole) {
-    return <Navigate to={userRole === 'vendor' ? '/vendor/dashboard' : '/customer/dashboard'} replace />;
-  }
+  const cartTotal = cartItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
 
   return (
     <Routes>
-      <Route path="/signin" element={
-        user ? 
-          <Navigate to={userRole === 'vendor' ? '/vendor/dashboard' : '/customer/dashboard'} replace /> : 
-          <SignIn title="Sign In" />
-      } />
-      <Route path="/" element={
-        user ? 
-          <Navigate to={userRole === 'vendor' ? '/vendor/dashboard' : '/customer/dashboard'} replace /> : 
-          <MainLayout />
-      } />
-      <Route path="/register" element={
-        user ? 
-          <Navigate to={userRole === 'vendor' ? '/vendor/dashboard' : '/customer/dashboard'} replace /> : 
-          <Register />
-      } />
-      <Route path="/contactus" element={<ContactUs />} />
+      <Route path="/" element={<MainLayout />} />
+      <Route path="/signin" element={<SignIn title="Welcome Back" />} />
+      <Route path="/register" element={<Register />} />
+      <Route path="/contact-us" element={<ContactUs />} />
+      
       <Route path="/vendor/dashboard" element={
-        user ? 
-          userRole === 'vendor' ? 
-            <VendorDashboard /> : 
-            <Navigate to="/customer/dashboard" replace /> :
-          <Navigate to="/signin" state={{ from: location }} replace />
-      } />
-      <Route path="/customer/dashboard" element={
-        user ? 
-          userRole === 'customer' ? 
-            <CustomerDashboard cartItems={cartItems} setCartItems={setCartItems} /> : 
-            <Navigate to="/vendor/dashboard" replace /> :
-          <Navigate to="/signin" state={{ from: location }} replace />
-      } />
-      <Route path="/checkout" element={
-        user ? (
-          locationCartItems.length > 0 ? (
-            <Checkout 
-              cartItems={locationCartItems} 
-              total={locationTotal} 
-              onOrderComplete={handleOrderComplete}
-            />
-          ) : (
-            <Navigate to="/customer/dashboard" replace />
-          )
+        user && userRole === 'vendor' ? (
+          <VendorDashboard />
         ) : (
           <Navigate to="/signin" state={{ from: location }} replace />
         )
       } />
-      <Route path="/order-confirmation" element={
-        user ? <OrderConfirmation /> : 
-        <Navigate to="/signin" state={{ from: location }} replace />
+
+      <Route path="/admin/dashboard" element={
+        user && userRole === 'admin' ? (
+          <AdminDashboard />
+        ) : (
+          <Navigate to="/signin" state={{ from: location }} replace />
+        )
       } />
+
+      <Route path="/customer/dashboard" element={
+        user && userRole === 'customer' ? (
+          <CustomerDashboard cartItems={cartItems} setCartItems={setCartItems} />
+        ) : (
+          <Navigate to="/signin" state={{ from: location }} replace />
+        )
+      } />
+
+      <Route path="/checkout" element={
+        user && userRole === 'customer' ? (
+          <Checkout cartItems={cartItems} total={cartTotal} onOrderComplete={() => setCartItems([])} />
+        ) : (
+          <Navigate to="/signin" state={{ from: location }} replace />
+        )
+      } />
+
+      <Route path="/order-confirmation" element={
+        user ? <OrderConfirmation /> : <Navigate to="/signin" state={{ from: location }} replace />
+      } />
+
+      <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );
-}
+};
 
-function App() {
+// Main App component that provides Router context
+const App = () => {
   return (
     <Router>
       <AppRoutes />
     </Router>
   );
-}
+};
 
 export default App;

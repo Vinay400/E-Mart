@@ -11,8 +11,7 @@ import {
   FaArrowUp,
   FaArrowDown,
   FaBox,
-  FaStar,
-  FaChartBar
+  FaStar
 } from 'react-icons/fa';
 import {
   Chart as ChartJS,
@@ -20,13 +19,12 @@ import {
   LinearScale,
   PointElement,
   LineElement,
-  BarElement,
   Title,
   Tooltip,
   Legend,
   ArcElement,
 } from 'chart.js';
-import { Line, Bar, Doughnut } from 'react-chartjs-2';
+import { Line, Doughnut } from 'react-chartjs-2';
 import VendorHeader from './VendorHeader';
 
 ChartJS.register(
@@ -34,7 +32,6 @@ ChartJS.register(
   LinearScale,
   PointElement,
   LineElement,
-  BarElement,
   Title,
   Tooltip,
   Legend,
@@ -53,18 +50,7 @@ interface Order {
     price: number;
     quantity: number;
     vendorId: string;
-    image?: string;
   }[];
-  customerId: string;
-  customerName: string;
-  paymentStatus: string;
-  shippingAddress: {
-    street: string;
-    city: string;
-    state: string;
-    zipCode: string;
-    country: string;
-  };
 }
 
 interface EarningsData {
@@ -111,90 +97,109 @@ function Earnings() {
   const [orderGrowth, setOrderGrowth] = useState(0);
 
   useEffect(() => {
-    fetchEarnings();
+    if (user) {
+      fetchEarnings();
+    }
   }, [user]);
 
   const fetchEarnings = async () => {
     try {
       if (!user) {
-        console.log('No user found');
+        setError('Please sign in to view earnings.');
+        setLoading(false);
         return;
       }
-      
-      console.log('Current user ID:', user.uid);
-      
-      const q = query(collection(db, 'orders'));
-      const querySnapshot = await getDocs(q);
-      
-      const orders = querySnapshot.docs.map(doc => {
-        const data = doc.data();
-        console.log('Order data:', data);
-        return {
-          id: doc.id,
-          ...data,
-          createdAt: data.createdAt?.toDate()
-        };
-      }) as Order[];
 
-      console.log('All orders:', orders);
+      // Query orders collection
+      const ordersRef = collection(db, 'orders');
+      const ordersQuery = query(ordersRef);
+      const querySnapshot = await getDocs(ordersQuery);
 
-      // Filter orders that contain items from this vendor
-      const vendorOrders = orders.filter(order => {
-        const hasVendorItems = order.items?.some(item => {
-          console.log('Checking item:', item, 'against vendor:', user.uid);
-          return item.vendorId === user.uid;
+      if (querySnapshot.empty) {
+        setEarnings({
+          totalEarnings: 0,
+          totalOrders: 0,
+          averageOrderValue: 0,
+          ordersByStatus: {
+            pending: 0,
+            processing: 0,
+            shipped: 0,
+            delivered: 0,
+            cancelled: 0,
+          },
+          earningsByMonth: {},
         });
-        console.log('Order', order.id, 'has vendor items:', hasVendorItems);
-        return hasVendorItems;
-      });
+        setTopProducts([]);
+        setLoading(false);
+        return;
+      }
 
-      console.log('Vendor orders:', vendorOrders);
+      const orders = querySnapshot.docs
+        .map(doc => ({
+          id: doc.id,
+          ...doc.data(),
+          createdAt: doc.data().createdAt?.toDate() || new Date(),
+        }))
+        .filter(order => order.items?.some(item => item.vendorId === user.uid)) as Order[];
 
-      const totalEarnings = vendorOrders.reduce((sum, order) => {
+      // Calculate total earnings
+      const totalEarnings = orders.reduce((sum, order) => {
         const vendorItemsTotal = order.items
           ?.filter(item => item.vendorId === user.uid)
-          .reduce((itemSum, item) => {
-            console.log('Adding to earnings:', item.price * item.quantity);
-            return itemSum + (item.price * item.quantity);
-          }, 0) || 0;
-        console.log('Order total for vendor:', vendorItemsTotal);
+          .reduce((itemSum, item) => itemSum + (item.price * item.quantity), 0) || 0;
         return sum + vendorItemsTotal;
       }, 0);
 
-      console.log('Total earnings calculated:', totalEarnings);
-
-      const totalOrders = vendorOrders.length;
+      const totalOrders = orders.length;
       const averageOrderValue = totalOrders > 0 ? totalEarnings / totalOrders : 0;
 
       // Calculate orders by status
       const ordersByStatus = {
-        pending: vendorOrders.filter(order => order.status === 'pending').length,
-        processing: vendorOrders.filter(order => order.status === 'processing').length,
-        shipped: vendorOrders.filter(order => order.status === 'shipped').length,
-        delivered: vendorOrders.filter(order => order.status === 'delivered').length,
-        cancelled: vendorOrders.filter(order => order.status === 'cancelled').length,
+        pending: orders.filter(order => order.status === 'pending').length,
+        processing: orders.filter(order => order.status === 'processing').length,
+        shipped: orders.filter(order => order.status === 'shipped').length,
+        delivered: orders.filter(order => order.status === 'delivered').length,
+        cancelled: orders.filter(order => order.status === 'cancelled').length,
       };
-
-      console.log('Orders by status:', ordersByStatus);
 
       // Calculate earnings by month
       const earningsByMonth: { [key: string]: number } = {};
-      vendorOrders.forEach(order => {
+      orders.forEach(order => {
         if (order.status !== 'cancelled' && order.createdAt) {
           const month = order.createdAt.toLocaleString('default', { month: 'short', year: 'numeric' });
           const vendorItemsTotal = order.items
             ?.filter(item => item.vendorId === user.uid)
             .reduce((sum, item) => sum + (item.price * item.quantity), 0) || 0;
-          console.log('Adding to month:', month, 'amount:', vendorItemsTotal);
           earningsByMonth[month] = (earningsByMonth[month] || 0) + vendorItemsTotal;
         }
       });
 
-      console.log('Earnings by month:', earningsByMonth);
+      // Calculate top products
+      const productMap = new Map<string, TopProduct>();
+      orders.forEach(order => {
+        order.items?.forEach(item => {
+          if (item.vendorId === user.uid) {
+            const revenue = item.price * item.quantity;
+            if (productMap.has(item.name)) {
+              const product = productMap.get(item.name)!;
+              product.revenue += revenue;
+              product.quantity += item.quantity;
+            } else {
+              productMap.set(item.name, {
+                name: item.name,
+                revenue,
+                quantity: item.quantity,
+              });
+            }
+          }
+        });
+      });
 
-      calculateGrowthMetrics(vendorOrders);
-      calculateTopProducts(vendorOrders);
+      const sortedProducts = Array.from(productMap.values())
+        .sort((a, b) => b.revenue - a.revenue)
+        .slice(0, 5);
 
+      setTopProducts(sortedProducts);
       setEarnings({
         totalEarnings,
         totalOrders,
@@ -202,73 +207,29 @@ function Earnings() {
         ordersByStatus,
         earningsByMonth,
       });
+
+      // Calculate growth
+      const now = new Date();
+      const currentMonth = now.toLocaleString('default', { month: 'short', year: 'numeric' });
+      const lastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1)
+        .toLocaleString('default', { month: 'short', year: 'numeric' });
+
+      const currentRevenue = earningsByMonth[currentMonth] || 0;
+      const lastRevenue = earningsByMonth[lastMonth] || 0;
+
+      const revenueGrowth = lastRevenue === 0 ? 100 : ((currentRevenue - lastRevenue) / lastRevenue) * 100;
+      const orderGrowthRate = ordersByStatus.pending > 0 ? 
+        ((ordersByStatus.delivered - ordersByStatus.pending) / ordersByStatus.pending) * 100 : 0;
+
+      setRevenueGrowth(revenueGrowth);
+      setOrderGrowth(orderGrowthRate);
+
     } catch (err) {
       console.error('Error fetching earnings:', err);
-      setError('Failed to fetch earnings data. Please try again later.');
+      setError('Failed to fetch earnings data');
     } finally {
       setLoading(false);
     }
-  };
-
-  const calculateGrowthMetrics = (vendorOrders: Order[]) => {
-    const now = new Date();
-    const lastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-    const twoMonthsAgo = new Date(now.getFullYear(), now.getMonth() - 2, 1);
-
-    const currentMonthOrders = vendorOrders.filter(order => 
-      order.createdAt >= lastMonth && order.createdAt < now
-    );
-    const lastMonthOrders = vendorOrders.filter(order => 
-      order.createdAt >= twoMonthsAgo && order.createdAt < lastMonth
-    );
-
-    const currentRevenue = currentMonthOrders.reduce((sum, order) => {
-      return sum + (order.items
-        ?.filter(item => item.vendorId === user?.uid)
-        .reduce((itemSum, item) => itemSum + (item.price * item.quantity), 0) || 0);
-    }, 0);
-
-    const lastRevenue = lastMonthOrders.reduce((sum, order) => {
-      return sum + (order.items
-        ?.filter(item => item.vendorId === user?.uid)
-        .reduce((itemSum, item) => itemSum + (item.price * item.quantity), 0) || 0);
-    }, 0);
-
-    const revenueGrowth = lastRevenue === 0 ? 100 : ((currentRevenue - lastRevenue) / lastRevenue) * 100;
-    const orderGrowth = lastMonthOrders.length === 0 ? 100 : 
-      ((currentMonthOrders.length - lastMonthOrders.length) / lastMonthOrders.length) * 100;
-
-    setRevenueGrowth(revenueGrowth);
-    setOrderGrowth(orderGrowth);
-  };
-
-  const calculateTopProducts = (vendorOrders: Order[]) => {
-    const productMap = new Map<string, TopProduct>();
-
-    vendorOrders.forEach(order => {
-      order.items?.forEach(item => {
-        if (item.vendorId === user?.uid) {
-          const revenue = item.price * item.quantity;
-          if (productMap.has(item.name)) {
-            const product = productMap.get(item.name)!;
-            product.revenue += revenue;
-            product.quantity += item.quantity;
-          } else {
-            productMap.set(item.name, {
-              name: item.name,
-              revenue,
-              quantity: item.quantity,
-            });
-          }
-        }
-      });
-    });
-
-    const sortedProducts = Array.from(productMap.values())
-      .sort((a, b) => b.revenue - a.revenue)
-      .slice(0, 5);
-
-    setTopProducts(sortedProducts);
   };
 
   const chartOptions = {
@@ -281,18 +242,18 @@ function Earnings() {
   };
 
   const getChartData = () => {
-    const months = Object.keys(earnings.earningsByMonth);
-    const values = Object.values(earnings.earningsByMonth);
-
+    const months = Object.keys(earnings.earningsByMonth).sort((a, b) => {
+      return new Date(a).getTime() - new Date(b).getTime();
+    });
+    
     return {
       labels: months,
       datasets: [
         {
           label: 'Monthly Revenue',
-          data: values,
+          data: months.map(month => earnings.earningsByMonth[month]),
           borderColor: 'rgb(99, 102, 241)',
           backgroundColor: 'rgba(99, 102, 241, 0.5)',
-          tension: 0.3,
         },
       ],
     };
@@ -300,16 +261,29 @@ function Earnings() {
 
   const getOrderStatusChartData = () => {
     return {
-      labels: Object.keys(earnings.ordersByStatus),
+      labels: ['Pending', 'Processing', 'Shipped', 'Delivered', 'Cancelled'],
       datasets: [
         {
-          data: Object.values(earnings.ordersByStatus),
+          data: [
+            earnings.ordersByStatus.pending,
+            earnings.ordersByStatus.processing,
+            earnings.ordersByStatus.shipped,
+            earnings.ordersByStatus.delivered,
+            earnings.ordersByStatus.cancelled,
+          ],
           backgroundColor: [
-            'rgba(251, 191, 36, 0.8)',
-            'rgba(59, 130, 246, 0.8)',
-            'rgba(99, 102, 241, 0.8)',
-            'rgba(34, 197, 94, 0.8)',
-            'rgba(239, 68, 68, 0.8)',
+            'rgba(255, 206, 86, 0.5)',
+            'rgba(54, 162, 235, 0.5)',
+            'rgba(75, 192, 192, 0.5)',
+            'rgba(99, 102, 241, 0.5)',
+            'rgba(255, 99, 132, 0.5)',
+          ],
+          borderColor: [
+            'rgba(255, 206, 86, 1)',
+            'rgba(54, 162, 235, 1)',
+            'rgba(75, 192, 192, 1)',
+            'rgba(99, 102, 241, 1)',
+            'rgba(255, 99, 132, 1)',
           ],
           borderWidth: 1,
         },
@@ -317,35 +291,18 @@ function Earnings() {
     };
   };
 
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'pending':
-        return 'bg-yellow-100 text-yellow-800';
-      case 'processing':
-        return 'bg-blue-100 text-blue-800';
-      case 'shipped':
-        return 'bg-indigo-100 text-indigo-800';
-      case 'delivered':
-        return 'bg-green-100 text-green-800';
-      case 'cancelled':
-        return 'bg-red-100 text-red-800';
-      default:
-        return 'bg-gray-100 text-gray-800';
-    }
-  };
-
   if (loading) {
     return (
-      <div className="flex justify-center items-center min-h-[400px]">
+      <div className="flex items-center justify-center min-h-screen">
         <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-indigo-500"></div>
       </div>
     );
   }
 
-  if (error) {
+  if (!user) {
     return (
-      <div className="text-center text-red-500 p-4">
-        {error}
+      <div className="flex flex-col items-center justify-center min-h-screen">
+        <p className="text-red-500">Please sign in to view earnings.</p>
       </div>
     );
   }
