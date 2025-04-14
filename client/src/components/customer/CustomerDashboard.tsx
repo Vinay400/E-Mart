@@ -82,6 +82,8 @@ function CustomerDashboard({ cartItems, setCartItems }: CustomerDashboardProps) 
   const { user, loading } = useAuth();
   const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState('');
+  const [selectedCategory, setSelectedCategory] = useState('all');
+  const [sortBy, setSortBy] = useState<'price-asc' | 'price-desc' | 'name-asc' | 'name-desc'>('price-asc');
   const [products, setProducts] = useState<any[]>([]);
   const [loadingProducts, setLoadingProducts] = useState(true);
   const [notifications, setNotifications] = useState<Notification[]>([]);
@@ -431,10 +433,27 @@ function CustomerDashboard({ cartItems, setCartItems }: CustomerDashboardProps) 
     }
   };
 
-  const filteredProducts = products.filter(product => 
-    product.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    (product.description && product.description.toLowerCase().includes(searchQuery.toLowerCase()))
-  );
+  const filteredProducts = products
+    .filter(product => {
+      const matchesSearch = product.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (product.description && product.description.toLowerCase().includes(searchQuery.toLowerCase()));
+      const matchesCategory = selectedCategory === 'all' || product.category === selectedCategory;
+      return matchesSearch && matchesCategory;
+    })
+    .sort((a, b) => {
+      switch (sortBy) {
+        case 'price-asc':
+          return (a.price || 0) - (b.price || 0);
+        case 'price-desc':
+          return (b.price || 0) - (a.price || 0);
+        case 'name-asc':
+          return a.name.localeCompare(b.name);
+        case 'name-desc':
+          return b.name.localeCompare(a.name);
+        default:
+          return 0;
+      }
+    });
 
   const handleCheckout = () => {
     if (cartItems.length === 0) {
@@ -853,69 +872,99 @@ function CustomerDashboard({ cartItems, setCartItems }: CustomerDashboardProps) 
                   <div className="flex justify-center items-center py-12">
                     <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-indigo-500"></div>
                   </div>
-                ) : filteredProducts.length > 0 ? (
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                    {filteredProducts.map(product => (
-                      <motion.div 
-                        key={product.id}
-                        whileHover={{ y: -5 }}
-                        className="glass-card p-4 rounded-xl"
-                      >
-                        <div className="aspect-w-1 aspect-h-1 w-full overflow-hidden rounded-lg bg-gray-200">
-                          <img
-                            src={product.imageUrl || 'https://via.placeholder.com/300'}
-                            alt={product.name}
-                            className="object-cover object-center"
-                            onError={(e) => {
-                              // Fallback to a default image if the original fails to load
-                              (e.target as HTMLImageElement).src = 'https://via.placeholder.com/300?text=No+Image';
-                            }}
-                          />
-                        </div>
-                        <div className="mt-4">
-                          <h3 className="text-lg font-medium text-gray-900">{product.name}</h3>
-                          <p className="mt-1 text-sm text-gray-500">{product.description || 'No description available'}</p>
-                          <div className="mt-2 flex items-center justify-between">
-                            <span className="text-lg font-bold text-indigo-600">${product.price?.toFixed(2) || '0.00'}</span>
-                            <div className="flex items-center gap-2">
-                              <motion.button
-                                whileHover={{ scale: 1.05 }}
-                                whileTap={{ scale: 0.95 }}
-                                onClick={() => addToWishlist(product)}
-                                className={`p-2 rounded-lg transition-colors ${
-                                  wishlistItems.some(item => item.id === product.id)
-                                    ? 'bg-red-100 text-red-600'
-                                    : 'bg-gray-100 text-gray-600 hover:bg-red-50 hover:text-red-600'
-                                }`}
-                              >
-                                <FaHeart />
-                              </motion.button>
-                              <motion.button 
-                                whileHover={{ scale: 1.05 }}
-                                whileTap={{ scale: 0.95 }}
-                                onClick={() => addToCart(product)}
-                                className="bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 transition-colors flex items-center gap-2"
-                              >
-                                <FaShoppingCart />
-                                Add to Cart
-                              </motion.button>
-                            </div>
-                          </div>
-                          <div className="mt-2 text-xs text-gray-500">
-                            Vendor: {product.vendorName || 'Unknown Vendor'}
-                          </div>
-                        </div>
-                      </motion.div>
-                    ))}
-                  </div>
                 ) : (
-                  <div className="text-center py-12">
-                    <FaShoppingBag className="mx-auto h-16 w-16 text-gray-400" />
-                    <h3 className="mt-4 text-lg font-medium text-gray-900">No products found</h3>
-                    <p className="mt-2 text-sm text-gray-500">
-                      {searchQuery ? 'Try a different search term' : 'There are no products available at the moment'}
-                    </p>
-                  </div>
+                  <>
+                    <div className="mb-6 flex flex-col sm:flex-row gap-4">
+                      <div className="flex-1">
+                        <select
+                          value={selectedCategory}
+                          onChange={(e) => setSelectedCategory(e.target.value)}
+                          className="w-full px-4 py-2 rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                        >
+                          <option value="all">All Categories</option>
+                          {Array.from(new Set(products.map(p => p.category))).map(category => (
+                            <option key={category} value={category}>{category}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="flex-1">
+                        <select
+                          value={sortBy}
+                          onChange={(e) => setSortBy(e.target.value as typeof sortBy)}
+                          className="w-full px-4 py-2 rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                        >
+                          <option value="price-asc">Price: Low to High</option>
+                          <option value="price-desc">Price: High to Low</option>
+                          <option value="name-asc">Name: A to Z</option>
+                          <option value="name-desc">Name: Z to A</option>
+                        </select>
+                      </div>
+                    </div>
+                    {filteredProducts.length > 0 ? (
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                        {filteredProducts.map(product => (
+                          <motion.div 
+                            key={product.id}
+                            whileHover={{ y: -5 }}
+                            className="glass-card p-4 rounded-xl"
+                          >
+                            <div className="aspect-w-1 aspect-h-1 w-full overflow-hidden rounded-lg bg-gray-200">
+                              <img
+                                src={product.imageUrl || 'https://via.placeholder.com/300'}
+                                alt={product.name}
+                                className="object-cover object-center"
+                                onError={(e) => {
+                                  // Fallback to a default image if the original fails to load
+                                  (e.target as HTMLImageElement).src = 'https://via.placeholder.com/300?text=No+Image';
+                                }}
+                              />
+                            </div>
+                            <div className="mt-4">
+                              <h3 className="text-lg font-medium text-gray-900">{product.name}</h3>
+                              <p className="mt-1 text-sm text-gray-500">{product.description || 'No description available'}</p>
+                              <div className="mt-2 flex items-center justify-between">
+                                <span className="text-lg font-bold text-indigo-600">₹{product.price?.toFixed(2) || '0.00'}</span>
+                                <div className="flex items-center gap-2">
+                                  <motion.button
+                                    whileHover={{ scale: 1.05 }}
+                                    whileTap={{ scale: 0.95 }}
+                                    onClick={() => addToWishlist(product)}
+                                    className={`p-2 rounded-lg transition-colors ${
+                                      wishlistItems.some(item => item.id === product.id)
+                                        ? 'bg-red-100 text-red-600'
+                                        : 'bg-gray-100 text-gray-600 hover:bg-red-50 hover:text-red-600'
+                                    }`}
+                                  >
+                                    <FaHeart />
+                                  </motion.button>
+                                  <motion.button 
+                                    whileHover={{ scale: 1.05 }}
+                                    whileTap={{ scale: 0.95 }}
+                                    onClick={() => addToCart(product)}
+                                    className="bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 transition-colors flex items-center gap-2"
+                                  >
+                                    <FaShoppingCart />
+                                    Add to Cart
+                                  </motion.button>
+                                </div>
+                              </div>
+                              <div className="mt-2 text-xs text-gray-500">
+                                Vendor: {product.vendorName || 'Unknown Vendor'}
+                              </div>
+                            </div>
+                          </motion.div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="text-center py-12">
+                        <FaShoppingBag className="mx-auto h-16 w-16 text-gray-400" />
+                        <h3 className="mt-4 text-lg font-medium text-gray-900">No products found</h3>
+                        <p className="mt-2 text-sm text-gray-500">
+                          {searchQuery ? 'Try a different search term' : 'There are no products available at the moment'}
+                        </p>
+                      </div>
+                    )}
+                  </>
                 )}
               </div>
             )}
@@ -975,7 +1024,7 @@ function CustomerDashboard({ cartItems, setCartItems }: CustomerDashboardProps) 
                                 <div className="text-sm text-gray-900">{item.vendor}</div>
                               </td>
                               <td className="px-6 py-4 whitespace-nowrap">
-                                <div className="text-sm text-gray-900">${item.price.toFixed(2)}</div>
+                                <div className="text-sm text-gray-900">₹{item.price.toFixed(2)}</div>
                               </td>
                               <td className="px-6 py-4 whitespace-nowrap">
                                 <div className="flex items-center space-x-2">
@@ -996,7 +1045,7 @@ function CustomerDashboard({ cartItems, setCartItems }: CustomerDashboardProps) 
                               </td>
                               <td className="px-6 py-4 whitespace-nowrap">
                                 <div className="text-sm font-medium text-gray-900">
-                                  ${(item.price * item.quantity).toFixed(2)}
+                                  ₹{(item.price * item.quantity).toFixed(2)}
                                 </div>
                               </td>
                               <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
@@ -1014,7 +1063,7 @@ function CustomerDashboard({ cartItems, setCartItems }: CustomerDashboardProps) 
                     </div>
                     <div className="mt-6 flex justify-between items-center">
                       <div className="text-xl font-bold">
-                        Total: ${calculateTotal().toFixed(2)}
+                        Total: ₹{calculateTotal().toFixed(2)}
                       </div>
                       <button
                         onClick={handleCheckout}
@@ -1049,7 +1098,7 @@ function CustomerDashboard({ cartItems, setCartItems }: CustomerDashboardProps) 
                           <h3 className="text-lg font-medium text-gray-900">{product.name}</h3>
                           <p className="mt-1 text-sm text-gray-500">{product.description || 'No description available'}</p>
                           <div className="mt-2 flex items-center justify-between">
-                            <span className="text-lg font-bold text-indigo-600">${product.price?.toFixed(2) || '0.00'}</span>
+                            <span className="text-lg font-bold text-indigo-600">₹{product.price?.toFixed(2) || '0.00'}</span>
                             <div className="flex items-center gap-2">
                               <motion.button
                                 whileHover={{ scale: 1.05 }}
@@ -1141,7 +1190,7 @@ function CustomerDashboard({ cartItems, setCartItems }: CustomerDashboardProps) 
                                   <div className="flex-1">
                                     <h4 className="text-sm font-medium text-gray-900">{item.name}</h4>
                                     <p className="text-sm text-gray-500">Quantity: {item.quantity}</p>
-                                    <p className="text-sm font-medium text-gray-900">${item.price.toFixed(2)}</p>
+                                    <p className="text-sm font-medium text-gray-900">₹{item.price.toFixed(2)}</p>
                                   </div>
                                 </div>
                               ))}
@@ -1156,7 +1205,7 @@ function CustomerDashboard({ cartItems, setCartItems }: CustomerDashboardProps) 
                                 </div>
                                 <div className="text-right">
                                   <p className="text-sm text-gray-500">Total Amount</p>
-                                  <p className="text-lg font-semibold text-gray-900">${order.totalAmount.toFixed(2)}</p>
+                                  <p className="text-lg font-semibold text-gray-900">₹{order.totalAmount.toFixed(2)}</p>
                                 </div>
                               </div>
                             </div>
