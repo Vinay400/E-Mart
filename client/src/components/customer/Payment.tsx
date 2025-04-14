@@ -12,7 +12,7 @@ interface PaymentProps {
   onFailure: (error: any) => void;
 }
 
-const RAZORPAY_KEY_ID = 'rzp_test_KuTmaka4Tn3byf';
+const RAZORPAY_KEY_ID = process.env.REACT_APP_RAZORPAY_KEY_ID || '';
 const API_URL = 'http://localhost:5001';
 
 const Payment: React.FC<PaymentProps> = ({ orderId, amount, onSuccess, onFailure }) => {
