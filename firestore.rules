@@ -100,7 +100,9 @@ service cloud.firestore {
         request.auth.uid == resource.data.userId;
       allow create: if isAuthenticated() && 
         request.auth.uid == request.resource.data.userId;
-      allow update, delete: if isAuthenticated() && 
+      allow update: if isAuthenticated() && 
+        request.auth.uid == resource.data.userId;
+      allow delete: if isAuthenticated() && 
         request.auth.uid == resource.data.userId;
     }
 
@@ -119,6 +121,18 @@ service cloud.firestore {
         isVendor() && resource.data.vendorId == request.auth.uid
       );
       allow delete: if isAdmin();
+    }
+
+    // Carts collection
+    match /carts/{userId} {
+      allow read: if isAuthenticated() && 
+        request.auth.uid == userId;
+      allow create: if isAuthenticated() && 
+        request.auth.uid == userId;
+      allow update: if isAuthenticated() && 
+        request.auth.uid == userId;
+      allow delete: if isAuthenticated() && 
+        request.auth.uid == userId;
     }
   }
 }

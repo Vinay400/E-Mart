@@ -38,7 +38,9 @@ import {
   addDoc, 
   deleteDoc, 
   onSnapshot,
-  writeBatch
+  writeBatch,
+  setDoc,
+  getDoc
 } from 'firebase/firestore';
 import './CustomerDashboard.css';
 import { CartItem, Product, Order } from '../../types';
@@ -349,6 +351,50 @@ function CustomerDashboard({ cartItems, setCartItems }: CustomerDashboardProps) 
     fetchAddresses();
   }, [activeTab, user]);
 
+  // Fetch cart items from Firestore when user logs in
+  useEffect(() => {
+    if (!user) return;
+
+    const fetchCartItems = async () => {
+      try {
+        const cartRef = doc(db, 'carts', user.uid);
+        const cartDoc = await getDoc(cartRef);
+        
+        if (cartDoc.exists()) {
+          const cartData = cartDoc.data();
+          setCartItems(cartData.items || []);
+        } else {
+          // Create an empty cart document for the user
+          await setDoc(cartRef, { items: [] });
+        }
+      } catch (error) {
+        console.error('Error fetching cart items:', error);
+        showNotification('Failed to load cart items', 'error');
+      }
+    };
+
+    fetchCartItems();
+  }, [user, setCartItems]);
+
+  // Save cart items to Firestore whenever they change
+  useEffect(() => {
+    if (!user) return;
+
+    const saveCartItems = async () => {
+      try {
+        const cartRef = doc(db, 'carts', user.uid);
+        await setDoc(cartRef, { 
+          items: cartItems,
+          updatedAt: serverTimestamp()
+        });
+      } catch (error) {
+        console.error('Error saving cart items:', error);
+      }
+    };
+
+    saveCartItems();
+  }, [cartItems, user]);
+
   const handleSignOut = async () => {
     try {
       await signOut(auth);
@@ -653,74 +699,6 @@ function CustomerDashboard({ cartItems, setCartItems }: CustomerDashboardProps) 
               <p className="text-gray-600">Discover amazing products and deals</p>
             </div>
             <div className="flex items-center gap-4">
-              <div className="relative" ref={notificationsRef}>
-                <motion.button
-                  whileHover={{ scale: 1.05 }}
-                  whileTap={{ scale: 0.95 }}
-                  onClick={() => setShowNotificationsDropdown(!showNotificationsDropdown)}
-                  className="relative p-2 text-gray-600 hover:text-indigo-600 transition-colors"
-                >
-                  <FaBell className="text-xl" />
-                  {systemNotifications.some(n => !n.isRead) && (
-                    <span className="absolute top-0 right-0 w-2 h-2 bg-red-500 rounded-full"></span>
-                  )}
-                </motion.button>
-
-                {showNotificationsDropdown && (
-                  <div className="absolute right-0 mt-2 w-80 bg-white rounded-lg shadow-lg py-2 z-50">
-                    <div className="px-4 py-2 border-b border-gray-200">
-                      <div className="flex justify-between items-center">
-                        <h3 className="text-lg font-semibold text-gray-900">Notifications</h3>
-                        {systemNotifications.some(n => !n.isRead) && (
-                          <button
-                            onClick={markAllNotificationsAsRead}
-                            className="text-sm text-indigo-600 hover:text-indigo-800"
-                          >
-                            Mark all as read
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                    <div className="max-h-96 overflow-y-auto">
-                      {systemNotifications.length === 0 ? (
-                        <div className="px-4 py-6 text-center text-gray-500">
-                          No notifications
-                        </div>
-                      ) : (
-                        systemNotifications.map((notification) => (
-                          <div
-                            key={notification.id}
-                            className={`px-4 py-3 hover:bg-gray-50 cursor-pointer ${
-                              !notification.isRead ? 'bg-blue-50' : ''
-                            }`}
-                            onClick={() => markNotificationAsRead(notification.id)}
-                          >
-                            <div className="flex items-start">
-                              <div className="flex-shrink-0 pt-1">
-                                {getNotificationIcon(notification.type)}
-                              </div>
-                              <div className="ml-3 flex-1">
-                                <p className="text-sm font-medium text-gray-900">
-                                  {notification.title}
-                                </p>
-                                <p className="text-sm text-gray-500">{notification.message}</p>
-                                <p className="text-xs text-gray-400 mt-1">
-                                  {formatNotificationDate(notification.timestamp)}
-                                </p>
-                              </div>
-                              {!notification.isRead && (
-                                <div className="ml-2 flex-shrink-0">
-                                  <span className="inline-block w-2 h-2 bg-blue-500 rounded-full"></span>
-                                </div>
-                              )}
-                            </div>
-                          </div>
-                        ))
-                      )}
-                    </div>
-                  </div>
-                )}
-              </div>
               <motion.button
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
