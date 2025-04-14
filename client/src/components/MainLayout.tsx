@@ -61,7 +61,7 @@ function MainLayout() {
 
             <div className="flex items-center space-x-4">
               <Link 
-                to="/contactus"
+                to="/contact-us"
                 className="inline-flex items-center justify-center space-x-2 px-6 py-2 rounded-full bg-white/10 text-white hover:bg-white/20 transition-colors backdrop-blur-md select-none"
               >
                 <MessageCircle className="h-5 w-5" />
@@ -166,7 +166,7 @@ function MainLayout() {
               className="mt-8"
             >
               <Link
-                to="/contactus"
+                to="/contact-us"
                 className="inline-flex items-center justify-center space-x-2 px-6 py-3 text-sm text-white/90 hover:text-white transition-colors select-none group"
               >
                 <MessageCircle className="h-5 w-5 transform group-hover:scale-110 transition-transform" />

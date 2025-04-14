@@ -1,7 +1,7 @@
 import React from "react";
 import { Phone, Mail, MapPin, Send, Clock } from 'lucide-react';
 
-function Contactus() {
+function ContactUs() {
   const onSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const formData = new FormData(event.currentTarget);
@@ -159,4 +159,4 @@ function Contactus() {
   );
 }
 
-export default Contactus;
+export default ContactUs;
